@@ -13,12 +13,13 @@ nav_order: 1
     - > bundle install && bundle exec jekyll serve
     - http://localhost:4000/ 查看
     - 更多参考 https://github.com/just-the-docs/just-the-docs-template/blob/main/README.md
-5. 如果测试通过，利用git push提交到github库，会自动部署到https://comsoftwhu.github.io/comsoftWHU/。
+5. 如果测试通过，利用git push提交到github库，会自动部署到https://comsoftwhu.github.io/。
 
 # 说明：
 1. 当前有四个目录，编译、AI编译、Linux内核和AOSP，请将文档组织到相关目录。
 2. 文档组织以markdown提交为主，会被自动渲染成html并部署到https://comsoftwhu.github.io/comsoftWHU/；markdown文件中的图片，可以保存到一个文件夹一并push（参考compile/gc.mk, compile/gc-image/)。
 3. markdown文件的编写，可参考已有文件，或参考https://just-the-docs.github.io/just-the-docs/。
+4. 文件名/文件夹名中不要用中文，否则路径操作比较麻烦。
 
 # 以下忽略：
 
