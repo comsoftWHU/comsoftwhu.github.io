@@ -17,7 +17,7 @@ nav_order: 1
 
 # 说明：
 1. 当前有四个目录，编译、AI编译、Linux内核和AOSP，请将文档组织到相关目录。
-2. 文档组织以markdown提交为主，会被自动渲染成html并部署到https://comsoftwhu.github.io/comsoftWHU/；markdown文件中的图片，可以保存到当前文件夹一并push。
+2. 文档组织以markdown提交为主，会被自动渲染成html并部署到https://comsoftwhu.github.io/comsoftWHU/；markdown文件中的图片，可以保存到一个文件夹一并push（参考compile/gc.mk, compile/gc-image/)。
 3. markdown文件的编写，可参考已有文件，或参考https://just-the-docs.github.io/just-the-docs/。
 
 # 以下忽略：
