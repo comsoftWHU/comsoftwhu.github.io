@@ -1,8 +1,28 @@
 ---
 title: Home
 layout: home
+nav_order: 1
 ---
-Hello, WHU!
+本网站的目的是方便武汉大学comsoft课题组的知识共享。
+
+# 步骤：
+1. 申请一个github账号，提醒项目管理员添加到该项目。
+2. git clone下载本项目。
+3. 添加或修改相关文件，git add加入本地库。
+4. 在本地部署测试，利用本地浏览器预览web。
+    - > bundle install && bundle exec jekyll serve
+    - http://localhost:4000/ 查看
+    - 更多参考 https://github.com/just-the-docs/just-the-docs-template/blob/main/README.md
+5. 如果测试通过，利用git push提交到github库，会自动部署到https://comsoftwhu.github.io/comsoftWHU/。
+
+# 说明：
+1. 当前有四个目录，编译、AI编译、Linux内核和AOSP，请将文档组织到相关目录。
+2. 文档组织以markdown提交为主，会被自动渲染成html并部署到https://comsoftwhu.github.io/comsoftWHU/；markdown文件中的图片，可以保存到当前文件夹一并push。
+3. markdown文件的编写，可参考已有文件，或参考https://just-the-docs.github.io/just-the-docs/。
+
+# 以下忽略：
+
+
 This is a *bare-minimum* template to create a Jekyll site that uses the [Just the Docs] theme. You can easily set the created site to be published on [GitHub Pages] – the [README] file explains how to do that, along with other details.
 
 If [Jekyll] is installed on your computer, you can also build and preview the created site *locally*. This lets you test changes before committing them, and avoids waiting for GitHub Pages.[^1] And you will be able to deploy your local build to a different platform than GitHub Pages.
