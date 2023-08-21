@@ -2,7 +2,8 @@
 layout: default
 title: 稀疏张量
 nav_order: 2
-parent: 入门课程
+parent: AI编译
+has_children: true
 ---
 
 # 稀疏张量
