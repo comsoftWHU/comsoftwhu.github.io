@@ -4,7 +4,14 @@ title: SpMMPlu阅读笔记
 nav_order: 2
 parent: 稀疏张量
 grand_parent: AI编译
+author: zeonfaiho
 ---
+
+
+{% assign author = site.data.authors[page.author] %}
+<div> 作者: {{ author.name }}  
+ 邮箱：{{ author.email }}
+</div>
 
 # SpMMPlu阅读笔记
 
