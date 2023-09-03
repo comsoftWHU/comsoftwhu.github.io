@@ -7,7 +7,6 @@ grand_parent: AI编译
 author: zeonfaiho
 ---
 
-
 {% assign author = site.data.authors[page.author] %}
 <div> 作者: {{ author.name }}  
  邮箱：{{ author.email }}

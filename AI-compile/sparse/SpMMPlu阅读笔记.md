@@ -7,11 +7,23 @@ grand_parent: AI编译
 author: zeonfaiho
 ---
 
-
 {% assign author = site.data.authors[page.author] %}
 <div> 作者: {{ author.name }}  
  邮箱：{{ author.email }}
 </div>
+
+<script type="text/javascript" async
+  src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    tex2jax: {
+      inlineMath: [['$','$'], ['\\(','\\)']],
+      processEscapes: true
+    }
+  });
+</script>
 
 # SpMMPlu阅读笔记
 
