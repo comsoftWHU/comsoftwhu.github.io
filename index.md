@@ -21,6 +21,12 @@ nav_order: 1
 3. markdown文件的编写，可参考已有文件，或参考https://just-the-docs.github.io/just-the-docs/。
 4. 文件名/文件夹名中不要用中文，否则路径操作比较麻烦。
 
+
+# CS入门课
+## MIT：计算机教育中缺失的一课
+- https://missing-semester-cn.github.io/
+
+
 # 以下忽略：
 
 
