@@ -22,9 +22,7 @@ nav_order: 1
 4. 文件名/文件夹名中不要用中文，否则路径操作比较麻烦。
 
 
-# CS入门课
-## MIT：计算机教育中缺失的一课
-- https://missing-semester-cn.github.io/
+
 
 
 # 以下忽略：
