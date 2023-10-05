@@ -1,6 +1,6 @@
 ---
-title: misc course
-layout: defaultCourse
+title: system call流程
+layout: default
 ---
 
 # system call流程
