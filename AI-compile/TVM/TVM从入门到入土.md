@@ -8,8 +8,8 @@ author: yuxin
 ---
 
 {% assign author = site.data.authors[page.author] %}
-<div> 作者: {{ author.name }}  
- 邮箱：{{ author.email }}
+<div> 作者: {{ YuXin He }}  
+ 邮箱：{{ 1192521955@qq.com }}
 </div>
 
 
