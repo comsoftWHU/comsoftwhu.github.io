@@ -1,6 +1,9 @@
 ---
-title: system call流程
 layout: default
+title: systemCall流程
+nav_order: 1
+parent: Linux内核
+author: qingan
 ---
 
 # system call流程
