@@ -3,10 +3,10 @@ title: Home
 layout: home
 nav_order: 1
 ---
-本网站的目的是方便武汉大学comsoft课题组的知识共享。
+本网站的目的是方便系统级软件方面的知识共享。由武汉大学comsoft课题组主要贡献。欢迎加入贡献，欢迎git clone。
 
-# 步骤：
-1. 申请一个github账号，提醒项目管理员添加到该项目。
+# 加入贡献：
+1. 申请一个github账号，提醒项目管理员（请联系：qingan@whu.edu.cn），将该账号添加到该项目。
 2. git clone下载本项目。
 3. 添加或修改相关文件，git add加入本地库。
 4. 在本地部署测试，利用本地浏览器预览web。
@@ -16,7 +16,12 @@ nav_order: 1
 5. 如果测试通过，利用git push提交到github库，会自动部署到https://comsoftwhu.github.io/。
 
 # 说明：
-1. 当前有四个目录，编译、AI编译、Linux内核和AOSP，请将文档组织到相关目录。
+1. 当前有四个目录，CS系统入门、编译、AI编译、Linux内核和AOSP，请将文档组织到相关目录。
+    - CS系统入门：CS系统领域的入门资料。
+    - 编译：编译相关的入门资料。
+    - AI编译：AI编译项目相关资料，包括AI优化概念、TVM框架等。
+    - Linux内核：Linux内核相关资料。
+    - AOSP：Android的开源实现AOSP项目相关资料。
 2. 文档组织以markdown提交为主，会被自动渲染成html并部署到https://comsoftwhu.github.io/comsoftWHU/；markdown文件中的图片，可以保存到一个文件夹一并push（参考compile/gc.mk, compile/gc-image/)。
 3. markdown文件的编写，可参考已有文件，或参考https://just-the-docs.github.io/just-the-docs/。
 4. 文件名/文件夹名中不要用中文，否则路径操作比较麻烦。

@@ -1,9 +1,6 @@
 ---
-layout: default
-title: syscall的背后
-nav_order: 2
-parent: Linux内核
-author: qingan
+title: misc course
+layout: defaultCourse
 ---
 
 # system call流程
@@ -61,7 +58,7 @@ brk(0x556f566b8000)                     = 0x556f566b8000
 2. execve从exe文件的入口.interp段找到动态链接器ld.so的路径信息，并加载执行ld.so(如果内存中已经存在ld.so.cache，则从内存中打开)
 3. ld.so从exe文件获得其依赖的libc.so库的路径信息，并加载libc.so
 4. 初始化exe对应进程状态，并跳转到entry开始执行
-5. getchar（）代码调用syscall read
+5. getchar()代码调用syscall read
 6. syscall调用syscall write
 7. exit退出
 
@@ -180,9 +177,10 @@ ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)
 
         return ret;
 }
+```
 
-hello_syscall -> syscall@libc -> system_call(kernel) -> write -> **vfs_write(kernel)** -> **file->f_op->write(driver/module)**
-
+4）hello_syscall -> syscall@libc -> system_call(kernel) -> write -> **vfs_write(kernel)** -> **file->f_op->write(driver/module)**
+```
 static ssize_t __vfs_write(struct file *file, const char __user *p,
                            size_t count, loff_t *pos)
 {
