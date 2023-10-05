@@ -7,9 +7,9 @@ grand_parent: AI编译
 author: yuxin
 ---
 
-{% assign author = site.data.authors[page.author] %}
-<div> 作者: {{ YuXin He }}  
- 邮箱：{{ 1192521955@qq.com }}
+
+<div> 作者: YuXin He  
+ 邮箱：1192521955@qq.com
 </div>
 
 
