@@ -40,7 +40,7 @@ Transformer一个很重要的特点是其中间张量具有dynamic shape，因�
 decoder only模型有两种工作状态：
 
 - Prefill phase：称为预处理或encoding；读取一段prompt，计算并缓存每一层的key和value，这个缓存称为KV Cache
-- Decode phase：生成新的token的阶段，每次生成一个token；具体来说，将上次生成的token用作这次推理的输入，得到新的一个token；新的token作为输入再进行推理，得到下一个token；直到获得<|end_of_text|>
+- Decode phase：生成新的token的阶段，每次生成一个token；具体来说，将上次生成的token用作这次推理的输入，得到新的一个token；新的token作为输入再进行推理，得到下一个token；直到获得<\|end_of_text\|>
 
 首先讨论更为典型的decode phase
 
@@ -61,7 +61,7 @@ decoder block
 
 FFN
 
-- 向高维度投影后再投影回低纬度：$[d \times 1] \to [n\_ff \times 1] \to [d \times 1]$
+- 向高维度投影后再投影回低纬度：$[d \times 1] \to [n\_{ff} \times 1] \to [d \times 1]$
 - 残差连接
 
 分析
