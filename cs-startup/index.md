@@ -1,7 +1,7 @@
 ---
 layout: default
 title: CS系统入门
-nav_order: 1
+nav_order: 2
 has_children: true
 ---
 
