@@ -5,6 +5,10 @@ nav_order: 3
 parent: Linux内核
 author: plot
 ---
+{% assign author = site.data.authors[page.author] %}
+<div> 作者: {{ author.name }}  
+ 邮箱：{{ author.email }}
+</div>
 
 本文介绍Kconfig的基础知识，故名Kconfig_v1。有关Kconfig的进阶知识会以v2，v3的形式发布。本文的例子基于Linux内核5.10.176。
 
@@ -32,7 +36,7 @@ Kconfig 系统的优点包括：
 
 ### config条目
 
-```kconfig
+```
 config CFG80211
     tristate "cfg80211 - wireless configuration API"
     depends on RFKILL || !RFKILL
@@ -43,17 +47,18 @@ config CFG80211
       cfg80211 is the Linux wireless LAN (802.11) configuration API.
       Enable this if you have a wireless device.
 ```
+
 **解析：**
 * config是关键字，表示一个配置选项的开始，下面几行定义了该config选项的属性。属性一般包括config类型，默认值，依赖关系，help说明；CFG80211是配置选项的名称，省略了前缀"CONFIG\_"（在kconfig文件中配置选项都忽略了前缀"CONFIG_"，而在.config和makefile中，配置选项都会添加前缀"CONFIG\_"）
 * tristate表示变量类型，即"CONFIG_CFG80211"的类型。config一共有**有5种类型**：bool、tristate、string、hex和int。其中bool表示config有y和n两种取值，而tristate有y，m和n三种取值，取值就决定了它们是否编译进内核，或者作为内核模块。
 * "cfg80211 - wireless configuration API"是config说明，在选择config时显示
-* depends on表明CONFIG_CFG80211依赖于其他config，只有当(RFKILL || !RFKILL) = y或m时，CONFIG_CFG80211才能选择。
+* depends on表明CONFIG_CFG80211依赖于其他config，只有当(RFKILL \|\| !RFKILL) = y或m时，CONFIG_CFG80211才能选择。
 * select也表明一种依赖性，不过是其他config依赖于CONFIG_CFG80211。当CONFIG_CFG80211=y时，CONFIG_FW_LOADER=y。前者=m时，后者也=m。其余select语句亦然。`select CRYPTO_SHA256 if CFG80211_USE_KERNEL_REGDB_KEYS`存在着if语句的条件限制。
 * help属性，用于介绍config。
 
 ### menu条目
 
-```kconfig
+```
 menu "Network testing"
 
 config NET_PKTGEN
@@ -70,10 +75,11 @@ endmenu
 
 ### source
 
-```kconfig
+```
 ## 当前目录为net/Kconfig
 source "net/wireless/Kconfig"
 ```
+
 **解析：**
 读取并解析Kconfig文件。该例中，net/Kconfig文件中读取解析net/wireless/Kconfig文件。source通常用于构建整个内核Kconfig系统，在后续的Kconfig启动流程中会体现这一点。
 
@@ -81,7 +87,7 @@ source "net/wireless/Kconfig"
 
 我们通过Kconfig系统配置特定的CONFIG，即(一般)将CONFIG_XXX赋值为y，m或者n。在Makefile中，通过CONFIG_XXX来控制编译行为。
 
-```Makefile
+```
 obj-$(CONFIG_CFG80211) += cfg80211.o
 ...
 cfg80211-y += core.o sysfs.o radiotap.o util.o reg.o scan.o nl80211.o
@@ -93,6 +99,7 @@ cfg80211-$(CONFIG_CFG80211_WEXT) += wext-compat.o wext-sme.o
 ```
 
 当CONFIG_CFG80211=y,m,n时：
+
 ```
 obj-$(CONFIG_CFG80211) += cfg80211.o
 -->
@@ -108,7 +115,7 @@ cfg80211-$(CONFIG_XXX)同理，根据CONFIG_XXX的值，选择是否将特定的
 
 * 构建Kconfig系统：读取最外层的Kconfig文件，构建整个内核的Kconfig系统。
 
-```kconfig
+```
 mainmenu "Linux/$(ARCH) $(KERNELVERSION) Kernel Configuration"
 source "scripts/Kconfig.include"
 source "init/Kconfig"
