@@ -1,3 +1,11 @@
+---
+layout: default
+title: Kconifg_v1
+nav_order: 3
+parent: Linux内核
+author: plot
+---
+
 本文介绍Kconfig的基础知识，故名Kconfig_v1。有关Kconfig的进阶知识会以v2，v3的形式发布。本文的例子基于Linux内核5.10.176。
 
 ## Kconfig简介
