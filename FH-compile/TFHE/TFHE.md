@@ -1,9 +1,9 @@
 ---
 layout: default
-title: C++ Transpiler
+title: TFHE:环面上全同态加密方案
 nav_order: 2
-parent: FH-compile
-author: qingan
+parent: TFHE
+author: lzc
 ---
 
 # TFHE：环面上全同态加密方案
