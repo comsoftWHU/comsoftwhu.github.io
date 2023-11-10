@@ -32,7 +32,7 @@ author: qingan
 
     - dex文件。这是Android系统的可执行文件，包含应用程序的全部操作指令以及运行时数据。通常命名classes.dex文件。
     应用程序员开发的Kotlin或Java代码，先被编译成Java字节码文件格式.class，然后再利用dx工具将所有.class文件合并到一个classes.dex文件。在合并过程中，不仅通过数据共享降低了信息冗余，而且将适合解释执行的Java字节码转化成更适合编译优化的dex字节码。相比传统的jar文件，dex文件的大小能较少约50%。
-![Alt text](image-1.png){:width="100" height="100"}
+![Alt text](appSizePreview.assets/image-1.png){:width="100" height="100"}
 
     - so文件。应用程序所依赖的第三方库（native代码）。通常在lib目录下。
     - res。应用程序用到的资源文件。一般包括图像，布局文件，字符串，音频，XML文件，这些资源是可以被Android系统管理的，并且根据配置（比如语言，屏幕）自行选择。
@@ -50,20 +50,20 @@ author: qingan
 - Resources.arsc 0.74% 
 - META-INF 0.74%
 - AndroidManifest.xml 0.06%
-![Alt text](image-4.png)
+![Alt text](appSizePreview.assets/image-4.png)
 
 ## 跨App的重复度分析
 1. 分析了11个流行App中so文件的存储占比，平均占比38%。
-![Alt text](image-6.png)
+![Alt text](appSizePreview.assets/image-6.png)
 
 2. 分析了11个App间重复的so文件数
-![Alt text](image-7.png)
+![Alt text](appSizePreview.assets/image-7.png)
 
 ## 建议
 1. 优先优化dex, so和资源文件。
 2. 处理单App内部的优化，还可以考虑如何消除跨App的重复冗余
 # 现有方法
-![Alt text](image-5.png)
+![Alt text](appSizePreview.assets/image-5.png)
 # 相关链接
 - https://juejin.cn/post/6844904103131234311#heading-21
 - https://juejin.cn/post/6872920643797680136
