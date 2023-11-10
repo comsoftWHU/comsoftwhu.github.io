@@ -7,13 +7,15 @@ nav_order: 1
 
 # 加入贡献：
 1. 申请一个github账号，提醒项目管理员（请联系：qingan@whu.edu.cn），将该账号添加到该项目。
-2. git clone下载本项目。
+2. git clone https://github.com/comsoftWHU/comsoftwhu.github.io.git
 3. 添加或修改相关文件，git add加入本地库。
 4. 在本地部署测试，利用本地浏览器预览web。
     - > bundle install && bundle exec jekyll serve
     - http://localhost:4000/ 查看
     - 更多参考 https://github.com/just-the-docs/just-the-docs-template/blob/main/README.md
-5. 如果测试通过，利用git push提交到github库，会自动部署到https://comsoftwhu.github.io/。
+5. 如果测试通过
+    - git commit： 提交到本地库
+    - git push：提交到远程github库（提交后，会自动部署到https://comsoftwhu.github.io/提供静态web服务）。
 
 # 说明：
 1. 当前有四个目录，CS系统入门、编译、AI编译、Linux内核和AOSP，请将文档组织到相关目录。
@@ -22,6 +24,7 @@ nav_order: 1
     - AI编译：AI编译项目相关资料，包括AI优化概念、TVM框架等。
     - Linux内核：Linux内核相关资料。
     - AOSP：Android的开源实现AOSP项目相关资料。
+    - FH-compile：全同态加密编译。
 2. 文档组织以markdown提交为主，会被自动渲染成html并部署到https://comsoftwhu.github.io/comsoftWHU/；markdown文件中的图片，可以保存到一个文件夹一并push（参考compile/gc.mk, compile/gc-image/)。
 3. markdown文件的编写，可参考已有文件，或参考https://just-the-docs.github.io/just-the-docs/。
 4. 文件名/文件夹名中不要用中文，否则路径操作比较麻烦。

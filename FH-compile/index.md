@@ -6,6 +6,12 @@ has_children: true
 ---
 
 # 全同态加密
+- https://zhuanlan.zhihu.com/p/149812445
+- https://zhuanlan.zhihu.com/p/150920501
+- https://zhuanlan.zhihu.com/p/156786436
+- https://zhuanlan.zhihu.com/p/260033204
+
+# 全同态加密编译器
 
 随着云计算服务的不断广泛采用，客户要求服务提供商保证其数据的安全和隐私。全同态
 加密（FHE）是一种密码技术，由于服务器端仅有权访问加密后的数据，因此可提供强大的安全保证。
