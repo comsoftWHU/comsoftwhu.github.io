@@ -3,6 +3,7 @@ description: 武汉大学comsoft组的知识分享!
 theme: just-the-docs
 
 url: https://comsoftWHU.github.io
+markdown: kramdown
 
 aux_links:
   Template Repository: https://github.com/just-the-docs/just-the-docs-template
