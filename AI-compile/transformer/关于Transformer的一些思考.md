@@ -177,7 +177,7 @@ FFN：
 为什么关注long context
 
 - 随着sequence length的增长，MHA (act-to-act)的FLOPs和MOPs会成正比增长
-  - kv cache也会成正比增长：在llama-2-7b上，一个token对应512K参数（256KB内存）；32k token对应16B参数（8GB内存），GPU memory装不下
+  - kv cache也会成正比增长：在llama-2-7b上，一个token对应512K参数（2MB内存）；32k token对应16B参数（64GB内存），GPU memory装不下
 
 - 优化latency需要非常熟悉GPU或者加速硬件的底层细节
 - 优化memory离不开量化和剪枝，需要非常了解模型的特性
