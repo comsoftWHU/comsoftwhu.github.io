@@ -3,12 +3,15 @@ title: Home
 layout: home
 nav_order: 1
 ---
-本网站的目的是方便系统级软件方面的知识共享。由武汉大学comsoft课题组主要贡献。欢迎加入贡献，欢迎git clone。
+本网站的目的是方便系统级软件方面的知识共享。由武汉大学comsoft课题组主要维护。欢迎加入贡献，欢迎git clone。
 
 # 加入贡献：
 1. 申请一个github账号，提醒项目管理员（请联系：qingan@whu.edu.cn），将该账号添加到该项目。
 2. git clone https://github.com/comsoftWHU/comsoftwhu.github.io.git
-3. 添加或修改相关文件，git add加入本地库。
+3. 添加或修.md文件，git add加入本地库。
+    - 如果需要新增子目录d，来存放d/x.md，则需要在新目录d下额外添加一个index.md文件，作为该子目录的首页。
+    - 如果需要x.md文件需要引用图片，则在同目录下增加一个x.assets子目录，专门用来存放对应的图片。
+    - 文件名/文件夹名中不要用中文，否则不同系统环境下，路径操作比较麻烦。
 4. 在本地部署测试，利用本地浏览器预览web。
     - > bundle install && bundle exec jekyll serve
     - http://localhost:4000/ 查看
@@ -25,7 +28,7 @@ nav_order: 1
     - Linux内核：Linux内核相关资料。
     - AOSP：Android的开源实现AOSP项目相关资料。
     - FH-compile：全同态加密编译。
-2. 文档组织以markdown提交为主，会被自动渲染成html并部署到https://comsoftwhu.github.io/comsoftWHU/；markdown文件中的图片，可以保存到一个文件夹一并push（参考compile/gc.mk, compile/gc-image/)。
+2. 文档组织以markdown提交为主，会被自动渲染成html并部署到https://comsoftwhu.github.io/comsoftWHU/；markdown文件中的图片，可以保存到一个文件夹一并push（参考compile/gc.mk, compile/gc.assets/)。
 3. markdown文件的编写，可参考已有文件，或参考https://just-the-docs.github.io/just-the-docs/。
 4. 文件名/文件夹名中不要用中文，否则路径操作比较麻烦。
 

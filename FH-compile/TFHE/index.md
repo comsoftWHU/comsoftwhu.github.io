@@ -1,8 +1,8 @@
 ---
 layout: default
-title: FH-compile
+title: TFHE
 nav_order: 7
-has_children: true
+parent: FH-compile
 ---
 
 

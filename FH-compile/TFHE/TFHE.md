@@ -3,8 +3,13 @@ layout: default
 title: TFHE:环面上全同态加密方案
 nav_order: 2
 parent: TFHE
-author: lzc
+author: whubeibei
 ---
+
+{% assign author = site.data.authors[page.author] %}
+<div> 作者: {{ author.name }}  
+ 邮箱：{{ author.email }}
+</div>
 
 # TFHE：环面上全同态加密方案
 
