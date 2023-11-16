@@ -1,8 +1,8 @@
 ﻿---
 layout: default
-title: datalab-notes
-parent: CS系统入门
+title: datalab实验笔记
 nav_order: 2
+parent: CS系统入门
 has_children: true
 ---
 
