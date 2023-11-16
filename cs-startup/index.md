@@ -1,6 +1,6 @@
 ---
 layout: default
-title: CS系统入门
+title: cs-startup
 nav_order: 2
 has_children: true
 ---

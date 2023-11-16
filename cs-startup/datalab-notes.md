@@ -2,14 +2,15 @@
 layout: default
 title: datalab实验笔记
 nav_order: 2
-parent: CS系统入门
+parent: cs-startup
 has_children: true
 ---
 
 作者：汪晨旸
 
-本次实验由题目组成，实验报告将主要记录做题思路。  
-1.bitNor 
+# 内容
+本次实验由15道题目组成，实验报告将主要记录做题思路。  
+## 1.bitNor 
 ```
 /* 
  * bitNor - ~(x|y) using only ~ and & 
@@ -24,7 +25,7 @@ int bitNor(int x, int y) {
 ```
 德摩根律。
 
-2.copyLSB
+## 2.copyLSB
 ```
 /* 
  * copyLSB - set all bits of result to least significant bit of x
@@ -39,7 +40,7 @@ int copyLSB(int x) {
 ```
 首先取最低位，然后根据1的补码每一位都是1，0的补码每一位都是0性质完成需求。
 
-3.isEqual 
+## 3.isEqual 
 ```
 /* 
  * isEqual - return 1 if x == y, and 0 otherwise 
@@ -54,7 +55,7 @@ int isEqual(int x, int y) {
 ```
 异或的定义。
 
-4.bitMask 
+## 4.bitMask 
 ```
 /* 
  * bitMask - Generate a mask consisting of all 1's 
@@ -78,7 +79,7 @@ int bitMask(int highbit, int lowbit) {
   
 最后&highmask是为了防止highbit<lowbit,如果highbit<lowbit,由于现在异或的结果是lowbit-1位到highbit+1位都是1，&highmask正好为0,反之不会产生影响。  
 
-5.bitCount 
+## 5.bitCount 
 ```
 /*
  * bitCount - returns count of number of 1's in word
@@ -117,7 +118,7 @@ int bitCount(int x) {
 为了使代码优雅一点，我们采取分治的思想。首先，每两个数一组，相加并为一组，得到（还是以上面那个二进制数为例）10 01 10 00 ，然后每两组之间再相加并为一组，依次类推，直到32位都并为一组，就是最后的答案了。   
 由于两个长为x的二进制数相加结果一定能用长为2*x的二进制数表示，所以不必考虑进位的问题。
 
-6.TMax 
+## 6.TMax 
 ```
 /* 
  * TMax - return maximum two's complement integer 
@@ -131,7 +132,7 @@ int tmax(void) {
 ```
 造0x7FFFFFFF就好。
 
-7.isNonNegative 
+## 7.isNonNegative 
 ```
 /* 
  * isNonNegative - return 1 if x >= 0, return 0 otherwise 
@@ -146,7 +147,7 @@ int isNonNegative(int x) {
 ```
 把符号位提取出来取反即可。
 
-8.addOK 
+## 8.addOK 
 ```
 /* 
  * addOK - Determine if can compute x+y without overflow
@@ -163,7 +164,7 @@ int addOK(int x, int y) {
 首先，溢出的先决条件是x，y同号，即若（sign）x^y=1，则肯定不溢出。  
 之后，在已知x，y同号的条件下算一下x+y是否与x（或y）异号，异号的话就发生了溢出。  
 
-9.rempwr2 
+## 9.rempwr2 
 ```
 /* 
  * rempwr2 - Compute x%(2^n), for 0 <= n <= 30
@@ -188,7 +189,7 @@ int rempwr2(int x, int n) {
 事实上，在整理完后我发现，这一题遇到负数先把负数变成正数，然后取余，最后再变回负数跑出来也是满分的。你们可以试试。    
 
 
-10.isLess 
+## 10.isLess 
 ```
 /* 
  * isLess - if x < y  then return 1, else return 0 
@@ -213,7 +214,7 @@ int isLess(int x, int y) {
 
 (写完发现自己有点问题，其实可以判断x-y<0，这样符号位就不用特判0了，符号位为1直接是一个完整的情况)
 
-11.absVal 
+## 11.absVal 
 ```
 /* 
  * absVal - absolute value of x
@@ -231,7 +232,7 @@ int absVal(int x) {
 注意到任何位与0异或等于它本身，与1异或代表取反，故x^(x>>31)满足取反的要求。  
 !!(x>>31)就是满足根据符号位加一的需求了。  
 
-12.isPower2
+## 12.isPower2
 ```
 /*
  * isPower2 - returns 1 if x is a power of 2, and 0 otherwise
@@ -248,7 +249,7 @@ int isPower2(int x) {
 观察发现如果一个正数是2的幂，则这个数的2进值位只有一个1。负数按照题目要求，都不是2的幂。    
 故首先判断这个数是否为负（主要是0x8000000在捣乱），之后判断这个数与它的lowbit（取最低位1，一个数与上它的算术补码就是取最低位运算）是否相等，是的话就返回一。值得注意的是，0也与它的lowbit相等，故需特判。  
 
-13.float_neg
+## 13.float_neg
 ```
 /* 
  * float_neg - Return bit-level equivalent of expression -f for
@@ -271,7 +272,7 @@ unsigned float_neg(unsigned uf) {
 根据要求，NaN返回自身，故特判一下。    
 之后把符号位取反就行了。    
 
-14.float_half
+## 14.float_half
 ```
 /* 
  * float_half - Return bit-level equivalent of expression 0.5*f for
@@ -308,7 +309,7 @@ unsigned float_half(unsigned uf) {
 
 最后，根据/2之后的结果为denormal、不/2的时候是否为denormal分成三类，然后对相应的情况进行右移就好了。  
 
-15.float_i2f 
+## 15.float_i2f 
 ```
 /* 
  * float_i2f - Return bit-level equivalent of expression (float) x
@@ -356,5 +357,6 @@ unsigned float_i2f(int x) {
 最后根据Round-To-Even原则与round-nearest原则，看是否需要进位。值得注意的是如果frac因为进位大于23位，需要将溢出的那一位加到指数上。  
 （frac= (yy>>8)& 0x7fffff; 事实上不用& 0x7fffff，它本身就是无符号数）  
 
-欢迎关注我的csdn博客某汪922，后期会继续更新有关内容。  
+# 说明
+欢迎关注作者的csdn博客某汪922，后期会继续更新有关内容。  
 原文链接：http://t.csdnimg.cn/OHr5Q
