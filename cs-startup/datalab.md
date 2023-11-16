@@ -358,4 +358,4 @@ unsigned float_i2f(int x) {
 
 # 说明
 欢迎关注作者的csdn博客某汪922，后期会继续更新有关内容。  
-原文链接：http://t.csdnimg.cn/OHr5Q
+原文链接：[http://t.csdnimg.cn/OHr5Q](http://t.csdnimg.cn/OHr5Q)
