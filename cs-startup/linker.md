@@ -1,11 +1,16 @@
 ---
 layout: default
 title: linker
-nav_order: 2
+nav_order: 3
 parent: cs-startup
 has_children: true
 ---
 
+
+{% assign author = site.data.authors[page.author] %}
+<div> 作者: {{ author.name }}  
+ 邮箱：{{ author.email }}
+</div>
 
 
 # 论文阅读

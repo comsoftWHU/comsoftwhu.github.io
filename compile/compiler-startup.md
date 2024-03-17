@@ -16,7 +16,7 @@ author: qingan
 - 实践：
     - [LLVM项目](https://llvm.org)
     - [LLVM cook book](https://gitee.com/li-qingan/cs-docs/tree/master/ebooks/llvmCookBook.pdf)
-    - [LLVM讨论资料](https://gitee.com/li-qingan/cs-docs/llvmSlides)
+    - [LLVM讨论资料](https://gitee.com/li-qingan/cs-docs/tree/master/llvmSlides)
 
 ## 前端
 - 理论：龙书第2章的例子 ([龙书](https://gitee.com/li-qingan/cs-docs/tree/master/ebooks/DragonBook2nd.pdf))，or 虎书前端部分
