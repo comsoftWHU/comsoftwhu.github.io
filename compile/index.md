@@ -11,4 +11,4 @@ author: qingan
 </div>
 
 # 编译
-- ([编译器概述及龙书的结构](https://gitee.com/li-qingan/cs-docs/tree/master/misc/compiler-overview.pptx))
+- 编译器概述([ppt](https://gitee.com/li-qingan/cs-docs/tree/master/reports/compiler-overview24.pptx)  [pdf](https://gitee.com/li-qingan/cs-docs/tree/master/reports/compiler-overview24.pdf))
