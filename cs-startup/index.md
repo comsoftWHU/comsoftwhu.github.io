@@ -5,7 +5,10 @@ nav_order: 2
 has_children: true
 ---
 
-# CS（偏系统领域）的入门课
+# CS（偏系统领域）的路线图
+- [推荐的入门路线图](./roadmap)
+
+# 部分参考资料
 ## MIT：计算机教育中缺失的一课
 - [中文链接](https://missing-semester-cn.github.io/)
 - 简介：本课程会简单介绍计算机专业学生所必须、而通常的课堂所欠缺的一些重要的知识与技能，包括Linux环境下的命令与shell编程、如何调试、如何利用git进行代码版本控制等等。
