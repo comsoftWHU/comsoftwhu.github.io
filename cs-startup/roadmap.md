@@ -1,12 +1,12 @@
 ---
 layout: default
 title: roadmap
-nav_order: 2
+nav_order: 1
 parent: cs-startup
 has_children: true
 ---
 
-# 系统软件优化学习路线图
+# [系统软件优化学习路线图](./roadmap1.html)
 ## 入门: 
 ### 推荐教材
 - 《计算机组成与设计：软硬件接口》
