@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="X-UA-Compatible" content="ie=edge">
+<title>Markmap</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+}
+#mindmap {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+</style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/markmap-toolbar@0.17.2/dist/style.css">
+</head>
+<body>
+<svg id="mindmap"></svg>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.8.5/dist/d3.min.js"></script><script src="https://cdn.jsdelivr.net/npm/markmap-view@0.17.2/dist/browser/index.js"></script><script src="https://cdn.jsdelivr.net/npm/markmap-toolbar@0.17.2/dist/index.js"></script><script>(r => {
+                setTimeout(r);
+              })(() => {
+  const {
+    markmap,
+    mm
+  } = window;
+  const {
+    el
+  } = markmap.Toolbar.create(mm);
+  el.setAttribute('style', 'position:absolute;bottom:20px;right:20px');
+  document.body.append(el);
+})</script><script>((getMarkmap, getOptions, root2, jsonOptions) => {
+              const markmap = getMarkmap();
+              window.mm = markmap.Markmap.create(
+                "svg#mindmap",
+                (getOptions || markmap.deriveOptions)(jsonOptions),
+                root2
+              );
+            })(() => window.markmap,null,{"content":"软件性能优化","children":[{"content":"CPU","children":[{"content":"CPU特点","children":[{"content":"子字并行（SIMD）","children":[],"payload":{"lines":"3,4"}},{"content":"指令级并行","children":[],"payload":{"lines":"4,5"}},{"content":"多核并行","children":[],"payload":{"lines":"5,6"}},{"content":"分支预测","children":[],"payload":{"lines":"6,7"}}],"payload":{"lines":"2,3"}},{"content":"CPU优化思路","children":[{"content":"提升并行","children":[],"payload":{"lines":"9,10"}},{"content":"融合优化","children":[],"payload":{"lines":"10,11"}}],"payload":{"lines":"8,9"}},{"content":"常见CPU优化方法","children":[{"content":"循环不变式外提","children":[],"payload":{"lines":"13,14"}},{"content":"强度削弱","children":[],"payload":{"lines":"14,15"}},{"content":"向量化","children":[],"payload":{"lines":"15,16"}},{"content":"循环展开","children":[],"payload":{"lines":"16,17"}},{"content":"函数内联","children":[],"payload":{"lines":"17,18"}},{"content":"多线程","children":[],"payload":{"lines":"18,19"}}],"payload":{"lines":"12,13"}}],"payload":{"lines":"1,2"}},{"content":"内存","children":[{"content":"内存特点","children":[{"content":"局部性","children":[],"payload":{"lines":"24,25"}},{"content":"内存层次","children":[],"payload":{"lines":"25,26"}},{"content":"预取","children":[],"payload":{"lines":"26,27"}}],"payload":{"lines":"23,24"}},{"content":"内存优化思路","children":[{"content":"时间局部性","children":[],"payload":{"lines":"29,30"}},{"content":"空间局部性","children":[],"payload":{"lines":"30,31"}}],"payload":{"lines":"28,29"}},{"content":"常见内存优化方法","children":[{"content":"代码","children":[{"content":"基本块对齐","children":[],"payload":{"lines":"34,35"}},{"content":"基本块重排","children":[],"payload":{"lines":"35,36"}},{"content":"函数拆分","children":[],"payload":{"lines":"36,37"}},{"content":"函数重排","children":[],"payload":{"lines":"37,39"}}],"payload":{"lines":"33,34"}},{"content":"数据","children":[{"content":"循环分块","children":[],"payload":{"lines":"40,41"}},{"content":"内存预取","children":[],"payload":{"lines":"41,42"}},{"content":"对齐","children":[],"payload":{"lines":"42,44"}}],"payload":{"lines":"39,40"}}],"payload":{"lines":"32,33"}}],"payload":{"lines":"22,23"}},{"content":"自动优化方法","children":[{"content":"静态方法","children":[{"content":"数据流分析","children":[],"payload":{"lines":"46,47"}},{"content":"指针分析","children":[],"payload":{"lines":"47,48"}},{"content":"机器无关优化","children":[],"payload":{"lines":"48,49"}},{"content":"机器相关优化（指令调度、自动向量化、寄存器分配）","children":[],"payload":{"lines":"49,50"}},{"content":"并行与局部性","children":[],"payload":{"lines":"50,51"}},{"content":"链接时优化（LTO）","children":[],"payload":{"lines":"51,52"}}],"payload":{"lines":"45,46"}},{"content":"动态方法","children":[{"content":"profiling采集方法","children":[],"payload":{"lines":"53,54"}},{"content":"源码级优化（gcc/clang PGO)","children":[],"payload":{"lines":"54,55"}},{"content":"二进制级优化（Bolt, Propeller等)","children":[],"payload":{"lines":"55,58"}}],"payload":{"lines":"52,53"}}],"payload":{"lines":"44,45"}}]},{})</script>
+</body>
+</html>
