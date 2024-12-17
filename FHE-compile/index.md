@@ -1,6 +1,6 @@
 ---
 layout: default
-title: FH-compile
+title: FHE-compile
 nav_order: 7
 has_children: true
 ---

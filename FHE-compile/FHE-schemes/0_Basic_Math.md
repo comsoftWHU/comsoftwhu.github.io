@@ -1,8 +1,9 @@
 ---
 layout: default
-title: Basic Math 
+title: 0 Basic Math 
 nav_order: 2
-parent: FH-compile
+parent: FHE-schemes
+grand_parent: FHE-compile
 author: plot
 ---
 {% assign author = site.data.authors[page.author] %}
@@ -178,4 +179,4 @@ $$
 
 在群论中，我们可以通过乘法子群$$\{\pm 1\}$$  来实现取根的半区间，它将根分为正方向（独立根），负方向（共轭根）两部分。几何直观上理解：它只取了圆的上半部分，下半部分可以看作上半部分的自然投影。
 
-![](Assets/Math.assets/Pasted image 20241206145616.png)
+![](Schemes.assets/circle.png)

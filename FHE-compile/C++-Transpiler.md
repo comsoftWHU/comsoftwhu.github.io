@@ -2,7 +2,7 @@
 layout: default
 title: C++ Transpiler
 nav_order: 2
-parent: FH-compile
+parent: FHE-compile
 author: qingan
 ---
 
