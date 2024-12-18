@@ -42,19 +42,23 @@ author: plot
 密钥分为两类，私钥**SK** (The secret key) 和公钥**PK** (The public key)。
 
 **SK** : 从$$R_2$$中随机生成多项式，即系数为$$\{-1,0,1\}$$的n次多项式
+
 **PK**：是一对多项式（$$PK_1$$, $$PK_2$$）
 * $$PK_1 = [-1(a\cdot\text{SK} +e)]_q$$ 
 * $$PK_2 =a$$
+
 其中 $$a$$ 是 $$R_q \in \mathbb{Z}_q[x]/(x^n +1)$$ 中的一个随机多项式，$$e$$是从$$\mathcal{X}$$中随机抽样的误差多项式。$$[\cdot]_q$$ 意味着多项式系数要模$$q$$。
 
 ## 1.5 Encryption and Decryption
 
 **加密：**
- 首先生成三个**小的**随机多项式，$$u$$ from $$R_2$$，$$e_1,e_2$$ from $$\mathcal{X}$$。
- 然后生成密文（Ciphertext）$$C = (C_1,C_2)$$：
+首先生成三个**小的**随机多项式，$$u$$ from $$R_2$$，$$e_1,e_2$$ from $$\mathcal{X}$$。
+
+然后生成密文（Ciphertext）$$C = (C_1,C_2)$$：
  * $$C_1 = [PK_1\cdot u +e_1+\Delta M]_q$$ ：屏蔽的明文信息
  * $$C_2 = [PK_2 \cdot u +e_2]_q$$ ：解密的辅助信息
- 这里的$$\Delta = \lfloor \frac{q}{t} \rfloor$$，可以理解为将$$M$$放大了。那么$$M$$在高位，噪音$$e$$就在低位，如下图所示：
+
+这里的$$\Delta = \lfloor \frac{q}{t} \rfloor$$，可以理解为将$$M$$放大了。那么$$M$$在高位，噪音$$e$$就在低位，如下图所示：
  
 <img src="Schemes.assets/bfv_ctxt.svg"   width="500" />
 
@@ -98,9 +102,10 @@ $$\begin{aligned}
 &= M 
  \end{aligned}$$
 
- round操作$$\lfloor \cdot \rceil$$ 去除掉了$$\frac{t}{q}\cdot v$$ ，模t操作$$[\cdot]_t$$去掉了$$t\cdot r$$ 。
- 需要注意的是round操作，我们得确保$$\frac{t}{q}\cdot \|v\|_\infty < \frac{1}{2}$$ ，才不影响$$M$$。
- 因为M是由二进制表示的，如果$$\frac{t}{q}\cdot \|v\|_\infty > \frac{1}{2}$$ ，我们在round时会将部分0解释为1，因为$$0+\frac{t}{q}\cdot \|v\|_\infty > \frac{1}{2}$$，反之亦然（注意无限范数是绝对值，可以将1解释为0） 。
+round操作$$\lfloor \cdot \rceil$$ 去除掉了$$\frac{t}{q}\cdot v$$ ，模t操作$$[\cdot]_t$$去掉了$$t\cdot r$$ 。
+
+需要注意的是round操作，我们得确保$$\frac{t}{q}\cdot \|v\|_\infty < \frac{1}{2}$$ ，才不影响$$M$$。
+因为M是由二进制表示的，如果$$\frac{t}{q}\cdot \|v\|_\infty > \frac{1}{2}$$ ，我们在round时会将部分0解释为1，因为$$0+\frac{t}{q}\cdot \|v\|_\infty > \frac{1}{2}$$，反之亦然（注意无限范数是绝对值，可以将1解释为0） 。
 
 ## 1.6 Homomorphic Evaluation
 
