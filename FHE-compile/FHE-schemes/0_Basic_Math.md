@@ -17,6 +17,7 @@ author: plot
 
 * $$\mathbb{R}[X]$$ ：多项式集合，其多项式的所有系数（coefficients）都在$$\mathbb{R}$$中。例如，$$\mathbb{Z}[X]$$代表所有系数为整数的多项式。
 * $$\mathbb{Z}_a[x]/(x^n +1)$$: 系数为$$\{\lceil - \frac{a}{2} \rceil , \dots,  \lfloor \frac{a}{2} \rfloor\}$$，不超过$$n$$阶的多项式。
+
 ## 2 商环（The Quotient Ring）
 
 商环 $$\mathbb{C}[X]/(X^N +1)$$ 是通过将多项式 $$\mathbb{C}[X]$$ 模 $$X^N +1$$.
