@@ -1,7 +1,7 @@
 ---
 layout: default
 title: 0 Basic Math 
-nav_order: 2
+nav_order: 1
 parent: FHE-schemes
 grand_parent: FHE-compile
 author: plot

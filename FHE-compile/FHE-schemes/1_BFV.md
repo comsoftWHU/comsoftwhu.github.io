@@ -6,6 +6,10 @@ parent: FHE-schemes
 grand_parent: FHE-compile
 author: plot
 ---
+{% assign author = site.data.authors[page.author] %}
+<div> 作者: {{ author.name }}  
+ 邮箱：{{ author.email }}
+</div>
 
 # 1 BFV
 
@@ -174,28 +178,89 @@ $$
 $$
 
 成立。
+这里的重线性化实质上就是将 $$C_3 \cdot SK^2$$ 用 $$C_{31}\cdot SK+C_{32}$$ 线性表示。
 
-为了访问$$SK^2$$，我们引入新的密钥 evaluation key $$EK = (-(a\cdot SK + e)+SK^2,a)$$ ，其中$$EK_1 +EK_2 \cdot SK = SK^2 -e$$ 。然后，我们可以通过如下方式计算$$C^*$$：
+为了访问$$SK^2$$，我们引入新的密钥 relinearization key $$RK = (-(a\cdot SK + e)+SK^2,a)$$ ，其中$$RK_1 +RK_2 \cdot SK = SK^2 -e$$ 。然后，我们可以通过如下方式计算$$C^*$$：
 
 $$\begin{aligned}
-C_1^* = [C_1 + EK_1 \cdot C_3]_q \\
-C_2^* = [C_2 + EK_2 \cdot C_3]_q
+C_1^* = [C_1 + RK_1 \cdot C_3]_q \\
+C_2^* = [C_2 + RK_2 \cdot C_3]_q
 \end{aligned}$$
 
 我们可对$$C^*$$进行验证：
 
 $$\begin{aligned}
-C_1^* +C_2^*\cdot SK  &=C_1 + EK_1 \cdot C_3 + SK\cdot (C_2 + EK_2 \cdot C_3) \\
- &= C_1 + C_2\cdot SK + C_3\cdot (EK_1 + EK_2 \cdot SK) \\
+C_1^* +C_2^*\cdot SK  &=C_1 + RK_1 \cdot C_3 + SK\cdot (C_2 + RK_2 \cdot C_3) \\
+ &= C_1 + C_2\cdot SK + C_3\cdot (RK_1 + RK_2 \cdot SK) \\
  &= C_1 + C_2\cdot SK + C_3 \cdot SK^2 + C_3 \cdot e
  \end{aligned}$$
 
- 其中$$C_3$$的系数较大，但可以将其分解。
+这里存在一个问题，噪音 $$e$$ 的系数 $$C_3$$ 较大，有可能会破坏密文。
+
+## 1.7.1 Relinearization v1
+
+在介绍重线性化方案前，重申我们的问题，寻找一个线性对 $$(C_{31},C_{32})$$ 使得
+
+$$
+[C_{31} + C_{32}\cdot SK]_q = [C_{3}\cdot SK^2 + e_{relin}]_q
+$$
+
+成立。另外，如果直接使用 $$RK \cdot C_3$$ 的方式来重线性化，会出现巨大噪音 $$C_3\cdot e$$ 。而接下来的重线性化方案就是针对 $$C_3 \cdot e$$ 所提出的。
+
+第一种重线性化方案：对 $$C_3$$ 进行 **T** 分解。（参照二进制分解）
+因为 $$C_3 \in \mathbb{Z}_q[x]/(x^n +1)$$ ，所以我们可以将 $$C_3$$ 表示为
+
+$$
+C_3(x) = C_3[0]+C_3[1]\cdot x + \dots + C_3[n-1]\cdot x^{n-1}
+$$
+
+其中，$$C_3[i]$$ 在 $$[0,\dots,q-1]$$ 范围中。
+
+然后，我们将$$C_3$$的每一项，即$$C_3[i]$$，进行**T**分解。我们用$$C_3(i)$$来表示$$C_3$$在$$T^i$$的分量（注意，$$C_3(i)$$是一个向量，表示$$C_3$$每个系数在$$T^i$$上的分量），那么$$C_3 = \sum_{i=0}^l C_3(i)\cdot T^i$$，其中$$l =\lfloor log_T(q)\rfloor$$ 。
+
+之前的relinearization key $$RK$$ 是对 $$SK^2$$ 的包装，在这个方案中，$$RK$$ 是对 $$T^i\cdot SK^2$$ 的包装，即
+
+$$
+(RK_0[i],RK_1[i]) = ([-(a_i\cdot SK + e_i)+T^i\cdot SK^2]_q,a_i)
+$$
+
+那么，$$C_{31} = \sum_{i=0}^l C_3(i)\cdot RK_0[i]$$，$$C_{32} = \sum_{i=0}^l C_3(i)\cdot RK_1[i]$$。
+
+验证一下：
+
+$$\begin{aligned}
+C_{31}+C_{32}\cdot SK = \sum_{i=0}^l C_3(i)\cdot [-(a_i\cdot SK + e_i)+T^i\cdot SK^2] + \sum_{i=0}^l a_i \cdot SK \cdot C_3(i) \\
+= - \sum_{i=0}^l e_i \cdot C_3(i) + C_3 \cdot SK^2
+ \end{aligned}$$
+
+## 1.7.2 Relinearization v2
+
+第二种方法类似于模数切换，首先我们在$$RK$$ 中对 $$SK^2$$ 放大，然后在计算$$C_{31}$$ 和$$C_{32}$$ 时再缩小，这样最终 $$C_3\cdot e$$ 的系数 $$C_3$$ 也缩小了。
+
+$$RK$$如下：
+
+$$
+(RK_0,RK_1) = ([-(a\cdot SK + e)+p\cdot SK^2]_{p\cdot q},a)
+$$
+
+其中，$$p$$ 远大于 $$q$$ 。
+那么，$$C_{31} = [\lfloor \frac{C_3 \cdot RK_0}{p} \rceil]_q$$，$$C_{32} = [\lfloor \frac{C_3 \cdot RK_1}{p} \rceil]_q$$。
+
+验证一下：
+
+
+$$\begin{aligned}
+\frac{C_3\cdot RK_0}{p}+\frac{C_3\cdot RK_1}{p}\cdot SK = C_3 \cdot SK^2 + \frac{-C_3\cdot e}{p} + q \cdot K
+ \end{aligned}$$
+
+可以看见，$$C_3\cdot e$$  缩小了 $$p$$ 倍。
 
 # 参考资料
 [Introduction to the BFV encryption scheme](https://www.inferati.com/blog/fhe-schemes-bfv)
 
 [Homomorphic encryption security standard](https://eprint.iacr.org/2019/939)
+
+[Homomorphic Encryption: a Toy Implementation in Python](https://bit-ml.github.io/blog/post/homomorphic-encryption-toy-implementation-in-python/)
 
 相关论文：
 * Brakerski, Zvika. "Fully homomorphic encryption without modulus switching from classical GapSVP." Annual cryptology conference. Berlin, Heidelberg: Springer Berlin Heidelberg, 2012.

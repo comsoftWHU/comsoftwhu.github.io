@@ -6,6 +6,10 @@ parent: FHE-schemes
 grand_parent: FHE-compile
 author: plot
 ---
+{% assign author = site.data.authors[page.author] %}
+<div> 作者: {{ author.name }}  
+ 邮箱：{{ author.email }}
+</div>
 
 # 3 CKKS
 

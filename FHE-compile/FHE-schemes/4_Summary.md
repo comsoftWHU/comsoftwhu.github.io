@@ -6,6 +6,10 @@ parent: FHE-schemes
 grand_parent: FHE-compile
 author: plot
 ---
+{% assign author = site.data.authors[page.author] %}
+<div> 作者: {{ author.name }}  
+ 邮箱：{{ author.email }}
+</div>
 
 BFV，BGV，CKKS是同态加密中很著名的加密方案。前两者主要用于准确的整数运算，后者用于近似的实数运算。
 
