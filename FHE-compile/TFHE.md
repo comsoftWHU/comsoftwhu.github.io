@@ -2,7 +2,7 @@
 layout: default
 title: TFHE:环面上全同态加密方案
 nav_order: 2
-parent: FH-compile
+parent: FHE-compile
 author: whubeibei
 ---
 
