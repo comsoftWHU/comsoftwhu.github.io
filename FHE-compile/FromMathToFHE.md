@@ -15,7 +15,7 @@ author: plot
 ## 基础知识
 
 
-### 数论
+### 数论知识
 **Def *The `N`-th roots of Unity（N次单元根）***：
 >1. N次单元根是方程 $$z^N =1$$ 的解：$$\omega = e^{2\pi ik/N}, k = 0,1,2,...,N-1$$
 >2. 本原`N`次根： $$\left\{\omega = e^{2\pi ik/n} \mid \gcd(k, n) = 1\right\}$$：阶为n的单元根 $$\omega^n =1$$ 
