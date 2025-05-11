@@ -15,7 +15,7 @@ author: plot
 ## 基础知识
 
 
-### 数论知识
+### 数论
 **Def *The `N`-th roots of Unity（N次单元根）***：
 >1. N次单元根是方程 $$z^N =1$$ 的解：$$\omega = e^{2\pi ik/N}, k = 0,1,2,...,N-1$$
 >2. 本原`N`次根： $$\left\{\omega = e^{2\pi ik/n} \mid \gcd(k, n) = 1\right\}$$：阶为n的单元根 $$\omega^n =1$$ 
@@ -53,11 +53,39 @@ $$
 
 ![](FromMathToFHE.assets/Pasted image 20250507150839.png)
 
+* 由上图所示，对于同形状的格，其基并不是唯一的（其可以通过行列式为 $$\pm 1$$ 的整数可逆矩阵（即 $$\mathrm{GL}_n(\mathbb{Z})$$ 中的变换）相互转换）
+* 尽管它们张成相同的格，但基向量之间的几何性质（如长度与夹角）可能差异很大，因此可将其分为“优良基（good basis）”与“劣质基（bad basis）”，通常依据基向量的接近正交性或短小程度来评判。
+
+例子：
+1. 整数格 $$\mathbb{Z}^n$$ ：基为标准正交基$$\{e_1,e_2,\dots,e_n\}$$（优良基），形成“方格纸”的点阵
+
+Def Span of Lattice（张成空间）：
+1. $$Span(L(B)) = Span(B) = \left\{ a_1 b_1 + a_2 b_2 + \dots + a_k b_k \mid a_1, a_2, \dots, a_k \in \mathbb{R} \right\}$$
+* $$Span(B)$$ 是由 $$B$$ 张成的向量空间，是连续的
+* 而 $$L(B)$$ 就是这个空间中的格子点集合，是离散的、呈格子状分布，不构成向量空间
+
+Def Fundamental domain of a lattice（基本域）：
+1. $$\mathcal{F}(B) = \left\{ \sum_{i=1}^n \alpha_i v_i \;\middle|\; 0 \le \alpha_i < 1 \right\}$$
+* $$\mathcal{F}(B)$$ 是格 $$L$$ 在空间中的一个“平铺单元”（即图中灰色部分），它们在空间中按格点平移可以无重叠地铺满整个 $$\operatorname{Span}(B)$$
+* 基本域的体积就是该格的**行列式**（即格的协方差体积）：$$\mathrm{Vol}(\mathcal{F}(B)) = \|\det(B)\|$$
+
+例子：
+1. 整数格 $$\mathbb{Z}^2$$ ：基为 $$v_1 = (1, 0), v_2 = (0, 1)$$；基本域是单位正方形：$$\mathcal{F} = \{ x e_1 + y e_2 \mid 0 \le x, y < 1 \}$$
+2. 斜格（非正交格）：基：$$v_1 = (1, 0), v_2 = \left( \frac{1}{2}, \frac{\sqrt{3}}{2} \right)$$；基本域是一个平行四边形
+
+Def Smallest distance（最短距离）：
+1. $$\lambda_1(L) = \inf \left\{ \|x - y\| \mid x, y \in L, x \neq y \right\}$$ (inf：下确界)
+* 格中两个不同点之间的最短距离
+
+例子：
+1. $$\lambda_1(\mathbb{Z}^2) = \| (1, 0) \| = 1$$
+2. $$\lambda_1 \left( v_1 = (1, 0), v_2 = \left( \frac{1}{2}, \frac{\sqrt{3}}{2} \right) \right) = \min \left( \| v_1 \|, \| v_2 \|, \| v_1 - v_2 \|, \dots \right) = 1$$
 
 ### 抽象代数
 
 #### 群
 群是抽象代数最基础的代数结构，其定义如下：
+
 **Def *Group（群）***：
 >1. 定义了一种二元运算（加法 or 乘法，下面以乘法为例）
 >2. 运算满足结合律， $$(ab)c = a(bc)$$
@@ -109,6 +137,19 @@ $$
 1. 整数环中的理想 $$n\mathbb{Z}=\{nk \| k \in \mathbb{Z}\}$$：例如 $$2\mathbb{Z}=\{\dots,-4,-2,0,2,4, \dots\}$$;
 2. 多项式环中的理想 $$(x) \subset \mathbb{R}[x]$$：$$(x)=\{xf(x)∣f(x)∈R[x]\}$$
 
+**Def Proper ideal （真理想）**：
+1. $$I\subseteq R$$ 是一个理想，且$$I \neq R$$ 
+
+**Def Prime ideal（素理想）**：
+设 $$R$$ 是一个交换环，$$I \subseteq R$$ 是一个真理想，那么对于任意 $$a, b \in R$$，若 $$ab \in I$$，则至少有一个 $$a \in I$$ 或 $$b \in I$$，即
+$$
+ab \in I \Rightarrow a \in I \quad or \quad b\in I
+$$
+
+* 可以将其类似为素数
+
+例子：
+1. 理想 $$(p) = p\mathbb{Z}$$ （$$p$$ 为素数）是素理想：理想 $$(5) = \{ 5k \mid k \in \mathbb{Z} \}$$ 是一个素理想，因为如果 $$ab \in (5)$$，即 $$5 \mid ab$$，则 $$5 \mid a$$ 或 $$5 \mid b$$。
 
 **Def Quotient Ring（商环）**：
 >1. $$R/I = \{r+I | r \in R\}$$
@@ -195,6 +236,7 @@ $$
 **Def *Ring of algebraic integers（代数整数环）***：
 >1. $$\mathcal{O}_K$$ : $$K$$ 中的所有代数整数
 * 例子：$$\mathcal{O}_\mathbb{Q} = \mathbb{Z}$$
+
 这里，需要特别注意圆分数域的代数整数环 $$\mathcal{O}_{\mathbb{Q}(\zeta_n)} = \mathbb{Z}[\zeta_n]$$ 的特殊性质：
 1. **Monogenic**  
 2. **Dedekind**：Dedekind 域中任意非零理想可以**唯一分解**为素理想的乘积
@@ -208,12 +250,22 @@ Def Monogenic：
 1. 圆分数域代数整数环$$\mathcal{O}_{\mathbb{Q}(\zeta_n)} = \mathbb{Z}[\zeta_n]$$，其整基为$$\{ 1, \zeta_n, \zeta_n^2, \dots, \zeta_n^{\varphi(n)-1} \}$$
 
 
+Dedekind域和理想：为了更好地理解Dedekind域，我们使用另一种方式来看待理想。我们可以看到，$$\mathcal{O}_K$$ 与 $$\mathbb{Z}$$ 有很多性质相似。但是 $$\mathcal{O}_K$$ 没有独特的质因数分解（而$$\mathbb{Z}$$ 中的任何一个数可以表示为唯一的质数乘积）。 例如，在 $$\mathbb{Q}(\sqrt{-5})$$ 中，我们可以将 $$6$$ 表示为 $$2\cdot 3$$ 或 $$(1+\sqrt{-5})\cdot (1-\sqrt{-5})$$，而在 $$\mathbb{Z}$$ 中，能唯一表示成 $$2\cdot 3$$。Kummer 发现，我们如果拥有 “ideal numbers” $$p_i$$ ，使得
+
+$$
+2=p_1p_2,\quad 1+\sqrt{-5}=p_1p_3,\quad 3=p_3p_4,\quad 1-\sqrt{-5}=p_2p_4
+$$
+
+那么，独特的分解仍然存在。Dedekind就将这个结构转换成了抽象代数中的理想（Ideal），使得（在Dedekind域中）任意非零理想可以唯一分解为素理想的乘积。
+
+
 Def fractional ideal （分式理想）：
 一个 $$R$$-子集 $$I \subset K$$ 是一个分式理想，当且仅当满足以下三个条件：
-$$\begin{aligned} 
-&\text{1. } I \text{ 是一个 } R\text{-模；} \\ &\text{2. 存在 } 0 \ne d \in R \text{ 使得 } dI \subseteq R； \\ &\text{3. } I \ne \{0\}。 
-\end{aligned}$$
-* $$\mathcal{O}_K$$ 中的每一个（分式）理想都是一个秩为 $$n = [K : \mathbb{Q}]$$ 的自由 $$\mathbb{Z}$$-模；即，它可以表示为某个基 $$\{u_1, \dots, u_n\} \subset \mathcal{O}_K$$​ 的所有 $$\mathbb{Z}$$-线性组合的集合。
+1. $$I$$ 是一个 $$R$$-模；
+2. 存在 $$0 \neq d \in R$$ 使得 $$dI \subseteq R$$ ；
+3. $$I \neq \{0\}$$；
+* （monogenic性质）：$$\mathcal{O}_K$$ 中的每一个（分式）理想都是一个秩为 $$n = [K : \mathbb{Q}]$$ 的自由 $$\mathbb{Z}$$-模；即，它可以表示为某个基 $$\{u_1, \dots, u_n\} \subset \mathcal{O}_K$$​ 的所有 $$\mathbb{Z}$$-线性组合的集合。
+* 这个基就是我们将（分式）理想转换为格的关键
 
 ## 数学结构
 
@@ -223,11 +275,19 @@ $$\begin{aligned}
 
 在FHE加密方案中，我们通常使用多项式商环 $$Z_q[x]/f(x)$$ 作为基本单位。其中$$f(x)$$多为圆分多项式$$\Phi(x)$$ 。
 
-**Def *多项式商环***：$$R_q = Z_q[X]/\Phi_n(X)$$，通常 $$\Phi_n(X) = X^n +1$$，$$n$$ 为2的幂，$$q$$ 为模数。 
+**Def *多项式商环***：$$R_q = Z_q[X]/\Phi_m(X)$$，通常 $$m$$ 为2的幂 （即$$\Phi_{2^k}(x)=x^{2^{k-1}} +1$$），$$q$$ 为模数。 
 
 ### 圆分数域的代数整数环
 
-多项式商环与圆分域整数环同构，即$$\mathbb{Z}_q[X]/\Phi_n(X) \cong \mathbb{Z}[\zeta_n]/q\mathbb{Z}[\zeta_n]$$ 。在后续分析中，我们可直接将这个多项式商环看作圆分数域的代数整数环 $$\mathcal{O}_{\mathbb{Q}(\zeta_n)}$$。
+多项式商环与圆分域整数环同构，即 $$\mathbb{Z}_q[X]/\Phi_m(X) \cong \mathbb{Z}[\zeta_m]/q\mathbb{Z}[\zeta_m]$$ 。
+
+同构解释如下：令 $$\varphi(m)=n$$，则
+* $$\mathbb{Z}_q[X]/\Phi_m(X) = \mathbb{Z}_q[X]/(x^n+1) =\{a_0+a_1x+a_2x^2+\dots+a_{n-1}x^{n-1}\}$$
+* $$\mathbb{Z}[\zeta_m]/q\mathbb{Z}[\zeta_m]= \{b_0+b_1\zeta_m + b_2\zeta_m^2+\dots+b_{n-1}\zeta_m^{n-1}\}$$
+
+可以很清晰地看出存在一个同构映射。
+
+在后续分析中，我们就直接将这个多项式商环看作圆分数域的代数整数环 $$\mathcal{O}_{\mathbb{Q}(\zeta_m)}$$。
 
 ### 理想格
 
@@ -249,14 +309,36 @@ Def Minkowski embedding：
 - $$n = [K : \mathbb{Q}] = r_1 + 2r_2$$​：数域的次数。
 1. 定义映射 $$\Phi: K \to \mathbb{R}^{r_1} \times \mathbb{C}^{2r_2}$$​：$$\Phi(x) = \left( \sigma_1(x), \dots, \sigma_{n}(x) \right)$$
 
-之前提到$$\mathcal{O}_K$$ 中的每一个（分式）理想都可以表示为某个基 $$\{u_1, \dots, u_n\} \subset \mathcal{O}_K$$​ 的所有 $$\mathbb{Z}$$-线性组合的集合。因此，在标准嵌入 $$\sigma$$ 下，理想 $$I$$ 生成一个秩为 $$n$$ 的理想格 $$\sigma(I)$$，其基为 $$\{\sigma(u_1), \dots, \sigma(u_n)\} \subset H$$。
+Minkowski embedding 利用了数域 $$K$$ 的所有共轭嵌入（即实嵌入和成对的复共轭嵌入），将 $$K$$ 嵌入到欧几里得空间 $$\mathbb{R}^{r_1} \times \mathbb{C}^{2r_2}$$​ 中，其中 $$r_1$$​ 是实嵌入个数，$$r_2$$​ 是复共轭对的个数。  
+在这个嵌入下，$$K$$ 的整数环 $$\mathcal{O}_K$$​ 的像构成该空间中的一个格（lattice）。
+
+在有的文献里，Canonical embedding 指的就是 Minkowski embedding。它也有另一种变体：将$$K$$ 映射到 $$\mathbb{R}^n$$ 中，即$$\Phi: K \to \mathbb{R}^{n}$$。
+
+Def Canonical embedding：
+- $$r_1$$​：$$K$$ 中的实嵌入（即 $$\sigma_i: K \hookrightarrow \mathbb{R}$$ 的个数）；
+- $$r_2$$：复共轭嵌入对的个数（即 $$2r_2$$​ 个复嵌入 $$\sigma_j: K \hookrightarrow \mathbb{C}$$，每对共轭计为一对）；
+- $$n = [K : \mathbb{Q}] = r_1 + 2r_2$$​：数域的次数。
+1. 定义映射 $$\Phi: K \to \mathbb{R}^n$$​：$$\Phi(x) = \left( \sigma_1(x), \dots, Re(\sigma_{r_1+1}(x)), Im(\sigma_{r_1+1}(x)),\dots,Re(\sigma_{r_1+r_2}(x)), Im(\sigma_{r_1+r_2}(x)) \right)$$
+2. $$Re:$$ 实部，$$Im$$：虚部
+
+在后续介绍中，以论文《On Ideal Lattices and Learning with Errors over Rings》中的空间 $$H \subseteq \mathbb{R}^{r_1} \times \mathbb{C}^{2r_2}$$ 为准。
+
+#### 理想格
+
+之前提到，$$\mathcal{O}_K$$ 中的每一个（分式）理想都可以表示为某个基 $$\{u_1, \dots, u_n\} \subset \mathcal{O}_K$$​ 的所有 $$\mathbb{Z}$$-线性组合的集合。因此，在Minkowski embedding $$\sigma$$ 下，理想 $$I$$ 生成一个秩为 $$n$$ 的理想格 $$\sigma(I)$$，其基为 $$\{\sigma(u_1), \dots, \sigma(u_n)\} \subset H$$。
+
+在进行 Minkowski embedding 后，理想格的几何直观如下：
+- 环元素 $$p(x)\in R$$ 通过Minkowski embedding $$\sigma$$ 被映射为 $$H$$ 中的向量 $$\sigma(p(x))$$ 。  
+- 环 $$R$$ 中的一个理想 $$I\subset R$$ 则被映射为 $$H$$ 中的一个离散点集 $$\sigma(I)$$，这些点构成一个格。由于环的代数结构，这些理想格通常具有特定的对称性 。  
+- 多项式的“大小”（例如其范数）对应于其嵌入向量的欧几里得长度。“小”多项式即对应于短的嵌入向量。
+
+理想格继承了环 $$\mathcal{O}_K$$ 的额外代数结构。这种结构使得它们在表示上更紧凑（例如，一个理想可以用少量生成元描述，而一个一般格的基需要 $$n^2$$ 个系数），从而提高了基于它们的密码方案的效率。
 
 
 ### 数据结构间的联系
 
-多项式商环 -->(同态) 圆分数域的代数整数环
-
-圆分数域的代数整数环 -->(embedding) 理想格
+我们从多项式商环 $$\mathbb{Z}_q[X]/\Phi_n(X)$$ 出发，该结构同构于 $$\mathbb{Z}[\zeta_n]/q\mathbb{Z}[\zeta_n]$$。
+而$$\zeta_n$$ 所在的数域 $$\mathcal{O}(\zeta_n)$$ 的整数环 $$\mathcal{O}_{\mathbb{Q}(\zeta_n)} = \mathbb{Z}(\zeta_n)$$ ，其（分式）理想可通过Minkowski embedding嵌入到 $$\mathbb{R}^{r_1} \times \mathbb{C}^{2r_2}$$ 中，形成理想格。
 
 ## 不同数据结构下的困难问题
 
@@ -279,6 +361,17 @@ $$
 
 ![](FromMathToFHE.assets/Pasted image 20250507135329.png)
 
+SVP存在几个重要的变体：
+1. **GapSVP**
+2. **Ideal-SVP**
+
+Def GapSVP （Gap Shortest Vector Problem）：
+判定问题：给定一个格 $$L$$ 的基，一个实数 $$\alpha>1$$，以及一个长度阈值 $$d>0$$。判定 $$\lambda_1(L) \leq d$$  或者 $$\lambda_1(L) >\alpha d$$。
+* 许多加密方案的安全性被归约到 GapSVP 的困难性。
+
+Def Ideal-SVP：
+给定一个格 $$L$$ 的基，已知 $$L$$ 是一个理想格（即 $$L$$ 是某个数域的整数环中的一个理想，或者更普遍地，由某个环 $$R$$ 的理想通过嵌入产生的格）。找到格 $$L$$ 中的一个最短非零向量 $$\lambda_1(L)$$。
+* 困难性：目前的共识是，对于精心选择的环和密码学相关参数，Ideal-SVP的困难性被认为与一般格上的SVP相当 。
 
 #### CVP
 **Def *CVP*：** 
@@ -316,23 +409,30 @@ $$
 
 ### RLWE
 
-RLWE的引入主要是为了解决LWE在实际应用中的效率瓶颈。通过引入多项式环的额外代数结构，RLWE不仅使得计算（尤其是核心的乘法操作）变得极为高效，同时也显著压缩了表示数据（如密钥和密文）所需的空间。这种“代数压缩”是RLWE效率优势的根本来源 。然而，这种向特定代数结构的特化也带来了新的考量。RLWE的安全性不再依赖于一般格上的困难问题，而是转嫁到了这些特定代数环所对应的“理想格”上的困难问题。这就需要全新的安全性证明，以确保这种结构化没有引入新的漏洞，LPR的工作正是为此提供了坚实的基础 。同时，选择合适的环结构（即多项式 Φ(x) 和模数 q）也变得至关重要，因为不当的选择可能导致特定的代数攻击 。例如，分圆多项式环，特别是2的幂次分圆多项式环，因其良好的NTT计算适应性和被认为足够安全的理想格结构而备受青睐 。
-
-**Def *RLWE***：给定环 $$R = \mathbb{Z}_q[x] / \langle f(x) \rangle$$，矩阵 $$A \in R^{m \times n}$$，秘密向量 $$s \in R^n$$，噪声向量 $$e \in R^m$$（通常来自某种分布），构造 $$b = A s + e$$，求解秘密向量 $$s$$。
+**Def *RLWE***：给定环 $$R_q = \mathbb{Z}_q[x] / \langle \Phi(x) \rangle$$，我们得到一个RLWE样本 $$(a_i,b_i) \in R_q \times R_q$$。其中，$$a_i$$ 从 $$R_q$$ 中均匀随机取样，$$b_i = a_i \cdot s + e_i$$ , $$s \in R_q$$ , $$e_i$$ ​是从一个特定的错误分布 $$\chi$$ 中抽取的“小”错误项。目的是从样本中求解出 $$s$$ 。
 与LWE类似，RLWE问题也分为搜索版本和判定版本：
 - **搜索RLWE**: 给定RLWE样本 $$(a_i​(x),b_i​(x)=a_i​(x)s(x)+e_i​(x))$$，目标是找出秘密多项式 $$s(x)$$ 。  
 - **判定RLWE**: 目标是区分两种分布的样本：一种是真实的RLWE样本，另一种是 $$(a_i​(x),u_i​(x))$$，其中 $$a_i​(x)$$ 和 $$u_i​(x)$$ 都是从 $$R_q$$​ 中独立均匀随机选取的 。
 
-**几何直观：** 虽然可以将 Rq​ 中的多项式视为其系数构成的向量，但更有洞察力的几何视图来自于**正则嵌入** (canonical embedding) 或类似嵌入。正则嵌入将环元素（多项式）映射到复数向量空间 Cn 或实数向量空间 Rn 。
+**几何直观：** 虽然可以将 $$R_q$$ 中的多项式视为其系数构成的向量，但更有洞察力的几何视图来自于Minkowski embedding 。Minkowski embedding 将环元素（多项式）映射到向量空间 $$H$$ 中。
+* 考虑 $$a \cdot s\in R_q$$​。这可以看作是由 $$R$$ 生成（并经过缩放和模q运算）的格中的一个点。
+- 方程 $$b≈a\cdot s \pmod q$$ 意味着在嵌入空间中（考虑到模 $$q$$ 的影响），$$\sigma(b)$$ 在几何上接近于$$\sigma (a\cdot s)$$。它们之间的差异是 $$\sigma(e)$$，而 $$\sigma(e)$$ 是一个短向量 。  
+- 这类似于一个有界距离解码（BDD）问题：给定 $$b$$，找到“格点” $$a \cdot s$$，使得它与 $$b$$ 的距离（由错误$$e$$ 定义）最小。
 
-**困难性：** Lyubashevsky, Peikert和Regev (LPR) 的工作表明，解决平均情况下的RLWE问题（对于特定参数和环，通常是分圆环）与解决最坏情况下的理想格问题（如近似SVP）一样困难，这种归约通常是量子的。这个归约类似于Regev为LWE所做的归约，但针对的是环和理想格的代数环境。它为RLWE的安全性建立了坚实的理论基础 。
+**困难性：** Lyubashevsky, Peikert和Regev (LPR) 的工作表明，解决平均情况下的RLWE问题（对于特定参数和环，通常是分圆环）与解决最坏情况下的理想格问题（如近似SVP）一样困难，这种归约通常是量子的。它为RLWE的安全性建立了坚实的理论基础 。
 
 ### 困难问题间的联系
 
-Search R-LWE 归约到 SVP
-![](FromMathToFHE.assets/Pasted image 20250506151332.png)
+在论文《On Ideal Lattices and Learning with Errors over Rings》中，作者Lyubashevsky, Peikert和Regev (LPR) 通过证明两个关键定理，将环上的学习误差问题（Ring-LWE, 简称 RLWE）规约到理想格上的近似最短向量问题（Ideal-SVP）。
 
+Theorem1：For any large enough q, solving **search R-LWE** is as hard as quantumly solving **poly(n)-approx SVP** in any (worst-case) ideal lattice in $$R= \mathcal{O}_K$$.
 
-Decision R-LWE 归约到 Search R-LWE
-![](FromMathToFHE.assets/Pasted image 20250506151557.png)
+Theorem2：Sloving **decision R-LWE** in $$R_q = \mathbb{Z}_q[X]/\Phi_m(X)$$ is as hard as sloving **search R-LWE**.
 
+这些归约形式化地建立了 RLWE 问题的**平均情况困难性**（即随机生成的 RLWE 实例是困难的）与理想格问题的**最坏情况困难性**（即所有实例都是困难的）之间的联系。
+
+这类归约意味着：如果存在一个高效算法能够解决 RLWE 问题（例如恢复秘密 $$s$$），那么可以将该算法作为“神谕”（Oracle）来构造一个高效算法，从而解决某个最坏情况的理想格问题（如近似 SVP 或 Ideal-SVP）。因此，如果理想格问题在最坏情况下被认为是困难的，那么 RLWE 问题在平均情况下也必然是困难的。
+
+这为 RLWE 提供了强有力的安全性保证：只要最坏情况下的理想格问题确实难解，就不会存在隐藏的“容易”的 RLWE 实例。
+
+论文进行规约化中，秘密$$s$$ 取自于对偶理想$$R_q^\vee$$，而在$$\Phi(x)$$ 为二次幂分圆多项式情况下， $$R_q^\vee$$ 就是 $$R_q$$ 的分式理想。所以，论文中提及到，在$$\Phi(x)$$ 为二次幂分圆多项式情况下，从$$R_q^\vee$$ 和 $$R_q$$ 取 $$s$$ 是等价的。
