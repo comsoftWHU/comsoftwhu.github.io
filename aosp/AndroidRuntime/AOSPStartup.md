@@ -36,6 +36,53 @@ author: Anonymous Committer
 
 <!-- /TOC -->
 
+```mermaid
+flowchart TD
+    subgraph 内核启动之后
+        %% init 进程
+        subgraph init进程
+            FS[FirstStageMain] --> SS[SetupSelinux]
+            SS --> SC[SecondStageMain]
+            SC --> LB[LoadBootScripts]
+        end
+
+        %% 连接 init 完成后进入 Zygote
+        LB --> ZG[init.zygote*.rc启动脚本启动app_process进程]
+    end
+
+  
+    %% 运行 App 子流程
+    subgraph 运行App
+        %% app_process 进程
+        subgraph app_process进程
+            AR[AppRuntime] --> SV[startVm函数]
+            SV --> JJ[JNI_CreateJavaVM函数]
+        end
+
+        %% ART 虚拟机
+        subgraph ART虚拟机
+            JJ2[JNI_CreateJavaVM in ART] --> RCR[Runtime::Create]
+            RCR --> HC[创建 Heap]
+            HC --> RS[Runtime::start]
+            RS --> EJ[执行 Java 业务代码]
+            EJ --> AM[ArtMethod::Invoke]
+            AM --> IE[解释器入口 art::interpreter::EnterInterpreterFromInvoke]
+            IE --> IR[解释器实际执行]
+        end
+
+        %% 连接 app_process 到 ART
+        JJ --> JJ2
+    end
+
+    ZG --> AR
+
+    style 内核启动之后    fill:#fdebd0,stroke:#333,stroke-width:1px
+    style init进程       fill:#fcf3cf,stroke:#333,stroke-width:1px
+    style 运行App        fill:#d6eaf8,stroke:#333,stroke-width:1px
+    style app_process进程 fill:#aed6f1,stroke:#333,stroke-width:1px
+    style ART虚拟机       fill:#aed6f1,stroke:#333,stroke-width:1px
+```
+
 ## 内核启动之后
 
 从PID为1的第一个进程init开始
