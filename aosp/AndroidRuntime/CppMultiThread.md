@@ -27,6 +27,9 @@ author: Anonymous Committer
             - [小结](#%E5%B0%8F%E7%BB%93)
         - [原子操作（std::atomic）](#%E5%8E%9F%E5%AD%90%E6%93%8D%E4%BD%9Cstdatomic)
             - [支持的类型](#%E6%94%AF%E6%8C%81%E7%9A%84%E7%B1%BB%E5%9E%8B)
+            - [怎么实现？](#%E6%80%8E%E4%B9%88%E5%AE%9E%E7%8E%B0)
+                - [CAS（Compare-And-Swap）](#cascompare-and-swap)
+                - [LL/SC（Load-Linked / Store-Conditional）](#llscload-linked--store-conditional)
             - [构造与赋值接口](#%E6%9E%84%E9%80%A0%E4%B8%8E%E8%B5%8B%E5%80%BC%E6%8E%A5%E5%8F%A3)
             - [赋值运算符与拷贝/移动](#%E8%B5%8B%E5%80%BC%E8%BF%90%E7%AE%97%E7%AC%A6%E4%B8%8E%E6%8B%B7%E8%B4%9D%E7%A7%BB%E5%8A%A8)
             - [基本读写接口：load / store](#%E5%9F%BA%E6%9C%AC%E8%AF%BB%E5%86%99%E6%8E%A5%E5%8F%A3load--store)
@@ -569,6 +572,72 @@ struct E {
 // 如果类型是平凡拷贝可移植的，就意味着可以安全地把它当作“一个连续、不含隐藏指针的内存块”来读写/交换；编译器可以直接用 memcpy、bitwise 操作或硬件原子指令对它做 RMW，而不需要调用构造/析构。
 // 对于 std::atomic<T>，如果 T 是标准布局类型，则 T 在不同编译单元、不同模块之间的布局是一致的，读写一个原子 T 不会因为编译器在不同位置插入隐藏填充或把基类成员放到不同偏移而导致不一致。这样才能保证多个线程在同一个机器/同一地址空间共享同一块内存时，对该原子类型的读写或比较并交换能够得到一致结果。
 ```
+#### 怎么实现？
+
+##### CAS（Compare-And-Swap）
+
+CAS硬件指令映射
+- x86/x86-64：使用 `LOCK CMPXCHG`（及 `CMPXCHG8B/CMPXCHG16B` 支持双宽度）指令序列，将“比较-交换”打包为一条原子指令。
+- Armv8.1-A 原子内存操作指令，包含LD<op>和ST<op>(其中<op>可以是ADD、CLR、EOR、SET、SMAX、SMIN、UMAX和UMIN), 比较并交换指令，包括CAS和CASP 交换指令，SWP
+
+大多数现代多核服务器上，CAS 指令的开销仅比一次缓存未命中读略高（约 1.15–1.35 倍），已被证明在多处理器环境下极具性能优势。<https://dl.acm.org/doi/10.1145/2517349.2522714>
+
+```asm
+_ZNSt13__atomic_baseIiEppEi:
+.LFB362:
+	pushq	%rbp
+	.seh_pushreg	%rbp
+	movq	%rsp, %rbp
+	.seh_setframe	%rbp, 0
+	subq	$16, %rsp
+	.seh_stackalloc	16
+	.seh_endprologue
+	movq	%rcx, 16(%rbp)
+	movl	%edx, 24(%rbp)
+	movq	16(%rbp), %rax
+	movq	%rax, -8(%rbp)
+	movl	$1, -12(%rbp)
+	movl	$5, -16(%rbp)
+	movl	-12(%rbp), %edx
+	movq	-8(%rbp), %rax
+	lock xaddl	%edx, (%rax)
+	movl	%edx, %eax
+	nop
+	addq	$16, %rsp
+	popq	%rbp
+	ret
+	.seh_endproc
+	.ident	"GCC: (x86_64-posix-seh-rev0, Built by MinGW-W64 project) 8.1.0"
+```
+
+<https://fgiesen.wordpress.com/2014/08/18/atomics-and-contention/>
+
+cpu在执行任务的时候并不是直接从内存中加载数据，而是会先将数据加载到L1和L2L3cache中，然后再从cache中读取数据进行运算。而现在的计算机通常都是多核处理器，每一个内核都对应一个独立的L1层缓存，cpu是如何保证Lock特性的？
+
+- 锁bus：性能消耗大，在intel 486处理器上用此种方式实现。来自其他处理器或总线代理的控制总线的请求将被阻止。在这里，锁定进入操作由总线上的一条消息组成，上面写着“好，每个人都退出总线一段时间”（出于我们的目的，这意味着“停止执行内存操作”）。然后，发送该消息的内核需要等待所有其他内核完成正在执行的内存操作，然后它们将确认锁定。只有在其他所有内核都已确认之后，尝试锁定操作的内核才能继续进行。最终，一旦锁定被释放，它再次需要向总线上的每个人发送一条消息，说：“一切都清楚了，您现在就可以继续在总线上发出请求了”。
+
+- 锁cache：在现代处理器上使用此种方式，但是在无法锁定cache的时候（如果锁驻留在不可缓存的内存中，或者如果锁超出了划分cache line 的cache boundy），仍然会去锁定总线。
+
+
+##### LL/SC（Load-Linked / Store-Conditional）
+
+许多 CPU 不直接提供“原子比较并交换（CAS）”指令，而是提供一对叫作 Load-Link (LL) 与 Store-Conditional (SC) 的指令序列来实现原子更新：
+1. LL (Load-Link)：
+- 读取一个内存地址的值，同时“在处理器内部”记住这个地址（建立一个监视点、reservation）。
+2. SC (Store-Conditional)：
+- 尝试将一个新值写回到这同一地址，前提是自从 LL 之后，没有其他核心（core）/线程写过这个地址。
+- 如果自 LL 以来，地址被改写，则 SC 会失败，不会写入任何内容；如果地址未被修改，则 SC 成功并完成写入。
+- SC 会返回一个状态码（通常是 0 表示失败、1 表示成功）。
+
+比如 
+
+- PowerPC：通过 lwarx（Load-Linked）和 stwcx.（Store-Conditional）组合实现。
+- ARMv8 有LDXR/STXR
+
+```arm
+ldxr    <xt>, [xn | sp] 
+stxr    <ws>, <xt>, [xn | sp]
+```
 
 #### 构造与赋值接口
 
@@ -733,15 +802,8 @@ a.compare_exchange_weak(exp, newVal,
 
 **虚假失败**
 
-许多现代 CPU（如 ARM、PowerPC、RISC-V 等）并不直接提供“原子比较并交换（CAS）”指令，而是提供一对叫作 Load-Link (LL) 与 Store-Conditional (SC) 的指令序列来实现原子更新：
-1. LL (Load-Link)：
-- 读取一个内存地址的值，同时“在处理器内部”记住这个地址（建立一个监视点、reservation）。
-2. SC (Store-Conditional)：
-- 尝试将一个新值写回到这同一地址，前提是自从 LL 之后，没有其他核心（core）/线程写过这个地址。
-- 如果自 LL 以来，地址被改写，则 SC 会失败，不会写入任何内容；如果地址未被修改，则 SC 成功并完成写入。
-- SC 会返回一个状态码（通常是 0 表示失败、1 表示成功）。
 
-在这种模型下，就可能出现多种“虚假”或“无关操作”导致 SC 失败的情况。例如：
+在LL-SC模型下，就可能出现多种“虚假”或“无关操作”导致 SC 失败的情况。例如：
 - 缓存行被驱逐：即使其它核心没有显式写入那个地址，只要该地址所在的缓存行被处理器“逐出”（evict）或“失去独占状态”，SC 也可能认为“有人改过它”而失败。
 - 系统监视点超时：某些处理器会在 LL 与 SC 之间加上时间或访问次数限制，如果这一段时间里缓存与监视点发生了某些硬件层面的冲刷，就算没有真正写入同一地址，SC 也会返回失败。
 - 编译器插入优化指令：在编译为汇编时，有些平台会为安全或同步目的插入额外的指令序列，这也可能让 SC 误判“中间发生了修改”。
