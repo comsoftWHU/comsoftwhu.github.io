@@ -714,12 +714,16 @@ bool compare_exchange_strong(
 - T desired：希望写入的新值。
 - success：当 CAS 成功时采用的内存序（通常可用 memory_order_acq_rel 或 memory_order_seq_cst）。
 - failure：当 CAS 失败时采用的内存序，通常必须是“release 或者更弱”。常见写法：
+
+
 ```cpp
 a.compare_exchange_weak(exp, newVal,
                          std::memory_order_acq_rel,
                          std::memory_order_acquire);
 
 ```
+
+
 **Weak vs Strong**
 
 - compare_exchange_weak 允许“虚假失败（spurious failure）”：即使原子值与 expected 相等，也有可能返回 false（对于底层硬件 CAS 指令可能因冲突而重试）。
@@ -1254,6 +1258,8 @@ int main() {
 ### 4.6 内存屏障（Barrier / Fence）
 - std::atomic_thread_fence()：显式插入内存屏障，禁止编译器/处理器在屏障两侧对读写重排序。
 - std::atomic_thread_fence(std::memory_order_acq_rel) 可用来在非原子操作场景下补充同步边界，但现代 C++ 多倾向于使用原子变量和锁，而不是手动屏障。
+
+
 ```cpp
 #include <atomic>
 
@@ -1273,6 +1279,8 @@ void thread2() {
     // 保证 (4) 在 (1) 之后可见
 }
 ```
+
+
 ### 4.7 “释放-一致性” 总结
 
 “Release Consistency” 是一种比顺序一致性更弱、更灵活的内存一致性模型，只需在建立明确的同步操作（Acquire-Release）时才保证可见性顺序。
@@ -1287,6 +1295,8 @@ C++ 内存模型通过多种 memory_order 选项给出了强度不同的同步�
 
 ### 5.1 双重检查锁（Double-Checked Locking）
 - 用于实现线程安全的懒汉式单例，但需注意 C++11 之后必须使用 std::atomic 和 memory_order 保证正确。
+
+
 ```cpp
 #include <atomic>
 #include <mutex>
@@ -1320,6 +1330,8 @@ private:
 std::atomic<Singleton*> Singleton::instance(nullptr);
 std::mutex Singleton::init_mutex;
 ```
+
+
 - 原理：
  1. 先读取原子指针 instance，若非空则直接返回。
  2. 否则进入锁内，再次检查，若仍然为空则执行初始化，并以 release 语义写入原子指针；
@@ -1328,6 +1340,8 @@ std::mutex Singleton::init_mutex;
 ### 5.2 生产者-消费者模式
 - 常见场景：一个或多个生产者线程往队列推送数据，若队列满则等待；一个或多个消费者线程从队列取数据，若队列空则等待。
 - 推荐使用 std::mutex + std::condition_variable：
+
+
 ```cpp
 #include <condition_variable>
 #include <mutex>
@@ -1371,6 +1385,8 @@ private:
  2.	N 个工作线程，循环从队列中取任务并执行。
  3.	提供 submit() 接口，提交一个 `std::function<void()>` 到队列。
  4.	线程池析构时发送停止信号（如特殊任务），并 join() 所有线程。
+
+ 
 ```cpp
 #include <vector>
 #include <thread>
@@ -1438,12 +1454,15 @@ private:
     bool stop_flag;
 };
 ```
+
 ### 5.4 并发队列（Concurrent Queue）
 - 基于无锁（Lock-Free）或细粒度锁的实现：
 - 无锁队列使用 std::atomic 和 CAS 实现，复杂度高，但性能好。
 - Boost、TBB、folly 都提供了成熟的并发队列实现。
 
 示例（简化版，单生产者单消费者环形缓冲区）：
+
+
 ```cpp
 template <typename T, size_t N>
 class SPSCQueue {
@@ -1481,6 +1500,8 @@ private:
 
 ### 5.5 读者-写者锁模式
 - 当读操作远多于写操作时，通过 std::shared_mutex 提高并发度：
+
+
 ```cpp
 #include <shared_mutex>
 #include <map>
@@ -1501,12 +1522,15 @@ void write_data(int key, const std::string& value) {
     data_map[key] = value;
 }
 ```
+
 - 注意：过多的读-写转换也会引起性能问题，必须根据实际场景权衡使用。
 
 ### 5.6 原子升级（Atomic Upgrade）与 ABA 问题
 - ABA 问题：在无锁数据结构中，如果线程 A 读取某个原子指针值为 A，然后线程 B 将其改为 B，又将其改回 A，导致线程 A 认为没有变化而误用。
 - 解决方案：带版本号的 CAS 或指针标记（Tagged Pointer），或者使用 `std::atomic<std::uintptr_t>` 存储指针和低位标记。
 - 示例（简化，带版本号的指针）：
+
+
 ```cpp
 struct TaggedPtr {
     T* ptr;
@@ -1560,6 +1584,8 @@ struct alignas(64) PaddedCounter {
 ## 示例与案例分析
 
 ### 7.1 简单的多线程加法示例
+
+
 ```cpp
 #include <iostream>
 #include <thread>
@@ -1592,6 +1618,9 @@ int main() {
 ```
 ### 7.2 发布-订阅示例
 - 使用 std::promise / std::future：
+
+
+
 ```cpp
 #include <future>
 #include <iostream>
@@ -1622,6 +1651,8 @@ int main() {
 ### 1. Atomic<T>
 
 封装了 `std::atomic<T>`
+
+
 ```cpp
 template<typename T>
 class Atomic : public std::atomic<T> {
@@ -1975,6 +2006,8 @@ Linux (ART_USE_FUTEXES=1)
 
 
 ### 6. 读写锁 ReaderWriterMutex & 特化的 MutatorMutex
+
+
 ```cpp
 class ReaderWriterMutex : public BaseMutex {
  public:
@@ -2011,6 +2044,8 @@ MutatorMutex 是专门用于 GC/线程挂起场景的特化，结合线程状态
 
 
 ### 7. 条件变量 ConditionVariable
+
+
 ```cpp
 class ConditionVariable {
  public:
@@ -2021,6 +2056,8 @@ class ConditionVariable {
   void Broadcast(Thread* self);
 };
 ```
+
+
 配合 Mutex 使用，内部：
 - Linux 下用一个 AtomicInteger sequence_ + futex 进行等待/重排
 - 非 Linux 下用 pthread_cond_t
@@ -2031,6 +2068,8 @@ class ConditionVariable {
 - MutexLock / ReaderMutexLock / WriterMutexLock
 - 构造即加锁，析构即解锁
 - 利用 Clang Thread-Safety 注解（ACQUIRE / RELEASE）做静态检查
+
+
 ```cpp
 // RAII 示例
 {
@@ -2042,6 +2081,8 @@ class ConditionVariable {
 ### 9. QuasiAtomic
 
 历史遗留的“准原子”支持，主要用于在不支持原子 64 位操作的平台上：
+
+
 ```cpp
 class QuasiAtomic {
  public:
@@ -2056,6 +2097,8 @@ class QuasiAtomic {
   // ...
 };
 ```
+
+
 - ARM32/i386 上用 ldrexd/strexd 或 movq + 互斥
 - 逐步被 C++11 原子 Atomic<T> 取代
 
@@ -2079,15 +2122,19 @@ Futex（Fast Userspace muTEX）是 Linux 为了实现高性能、低开销的用
 
 #### 常用 Futex 操作
 - FUTEX_WAIT
+
 ```cpp
 int futex(int *uaddr, FUTEX_WAIT, int val, const struct timespec *timeout);
 ```
+
 如果 *uaddr == val，线程进入睡眠；否则立即返回 -EWOULDBLOCK。
 
 - FUTEX_WAKE
+
 ```cpp
 int futex(int *uaddr, FUTEX_WAKE, int num_wake);
 ```
+
 唤醒最多 num_wake 个在该 uaddr 上等待的线程。
 
 - FUTEX_REQUEUE、FUTEX_CMP_REQUEUE 等高级操作，用于在两个 futex 地址之间重排等待队列，常用于实现读写锁、条件变量等。
@@ -2096,6 +2143,7 @@ int futex(int *uaddr, FUTEX_WAKE, int num_wake);
 #### 在 ART 中的应用
 
 在 ART 的 Mutex 实现里，如果检测到 ART_USE_FUTEXES 为真（Linux 平台），它就使用 futex 来管理加锁和等待：
+
 ```cpp
 void Mutex::ExclusiveUnlock(Thread* self) {
   if (kIsDebugBuild && self != nullptr && self != Thread::Current()) {
@@ -2160,7 +2208,9 @@ void Mutex::ExclusiveUnlock(Thread* self) {
   }
 }
 ```
+
 简化版本
+
 ```cpp
 void Mutex::ExclusiveUnlock(Thread* self) {
   // 1. 原子地把 state_and_contenders_ 的低位（held 标志）清零
@@ -2177,6 +2227,7 @@ void Mutex::ExclusiveLockUncontendedFor(Thread* self) {
   syscall(SYS_futex, &state_and_contenders_, FUTEX_WAIT, kHeldMask, nullptr, nullptr, 0);
 }
 ```
+
 - state_and_contenders_：用一个 AtomicInteger 存放“锁持有状态”与“等待者计数”。
 - 持有者释放锁：清除 held 标志后，如果有等待者，就 FUTEX_WAKE(1) 唤醒一个线程。
 - 等待者进入睡眠：读取到 held 标志后，自旋一定次数，仍未获取则 FUTEX_WAIT，直到被唤醒。
