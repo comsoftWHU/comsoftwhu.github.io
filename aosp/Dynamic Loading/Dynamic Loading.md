@@ -1,8 +1,8 @@
 ---
 layout: default
 title: Dynamic Loading
-nav_order: 3
-parent: Dynamic Loading
+nav_order: 1
+parent: DynamicLoading
 grand_parent: AOSP
 author: DimancheH
 ---

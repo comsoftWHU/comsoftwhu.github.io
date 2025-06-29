@@ -1,8 +1,9 @@
 ---
 layout: default
 title: Apk文件尺寸分析
+
+parent: Apk文件尺寸
 nav_order: 1
-parent: AOSP
 author: qingan
 ---
 {% assign author = site.data.authors[page.author] %}
