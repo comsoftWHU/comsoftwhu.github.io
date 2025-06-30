@@ -661,3 +661,197 @@ boot_image_spaces->swap(spaces);
 - 将额外预留空间存储到输出参数`extra_reservation`。
 
 
+## Image
+
+### ImageSection类
+
+描述镜像文件中的一个逻辑节的起始位置和大小
+
+```cpp
+uint32_t offset_;
+uint32_t size_;
+```
+
+
+####  ImageSections 枚举
+
+这个枚举描述了 ART 镜像文件内部的Sections的类型和顺序。镜像文件由多个不同类型的逻辑区域组成，每个区域存储特定类型的数据。这个枚举定义了这些区域的名称和相对顺序。
+
+注释中特别强调了，对这个结构（即这些节的顺序和数量）的任何改变都必须同时反映在ImageWriter和加载器中，因为它们需要知道如何正确地写入和解析镜像文件。
+
+- kSectionObjects: 存储 ART 对象（mirror::Object）的节，包括 Java 对象、数组、字符串等。这是镜像中最大且最重要的部分之一。
+
+- kSectionArtFields: 存储 ArtField 对象的节，ArtField 代表 Java 类的字段。
+
+- kSectionArtMethods: 存储 ArtMethod 对象的节，ArtMethod 代表 Java 类的方法。
+
+- kSectionImTables: 存储 IMT（Interface Method Table）的节。
+
+- kSectionIMTConflictTables: 存储 IMT 冲突表的节。
+
+- kSectionRuntimeMethods: 存储 ART 运行时内部方法的节，这些方法不是直接由 Java 代码定义，而是由 ART 虚拟机自身提供。
+
+- kSectionJniStubMethods: 存储 JNI 存根方法的节，用于 Java 代码调用原生代码（Native Code）。
+
+- kSectionInternedStrings: 存储内部化字符串（Interned Strings）的节。内部化字符串是唯一的字符串实例，所有内容相同的字符串都指向同一个实例，以节省内存。
+
+- kSectionClassTable: 存储类表的节，包含类的元数据和布局信息。
+
+- kSectionStringReferenceOffsets: 存储字符串引用偏移量的节。
+
+- kSectionDexCacheArrays: 存储 Dex 缓存数组的节。
+
+- kSectionMetadata: 存储通用元数据的节。
+
+- kSectionImageBitmap: 存储镜像位图（Image Bitmap）的节，可能用于垃圾回收器标记镜像中的对象。
+
+- kSectionCount: 枚举元素的总数，表示镜像节的总数量。
+
+
+
+### ImageHeader
+
+ImageHeader 类及其嵌套的 Block 类共同描述了镜像文件的结构。
+
+#### 相关的一些枚举类型
+
+##### ImageHeader::StorageMode 枚举
+
+StorageMode枚举定义了镜像数据块可能的存储模式：
+
+- kStorageModeUncompressed: 数据未压缩。
+
+- kStorageModeLZ4: 数据使用 LZ4 算法压缩。
+
+- kStorageModeLZ4HC: 数据使用 LZ4HC（高压缩比）算法压缩。
+
+- kStorageModeCount: 枚举元素的数量，用于内部计数。
+
+默认的存储模式是 kStorageModeUncompressed。
+
+
+
+##### BootImageLiveObjects 枚举
+
+与Boot Image相关，它定义了必须预先分配并保持活跃在引导镜像中的特定对象的类型。
+
+- kOomeWhenThrowingException: 预先分配的内存不足错误（Out Of Memory Error），当抛出一般异常时可能用到。
+
+- kOomeWhenThrowingOome: 预先分配的内存不足错误，当抛出另一个内存不足错误时可能用到（防止无限递归）。
+
+- kOomeWhenHandlingStackOverflow: 预先分配的内存不足错误，当处理栈溢出错误（StackOverflowError）时可能用到。
+
+- kNoClassDefFoundError: 预先分配的 NoClassDefFoundError 异常对象。
+
+- kClearedJniWeakSentinel: 预先分配的用于已清除的弱 JNI 引用（JNI weak references）的哨兵对象。
+
+- kIntrinsicObjectsStart: 内部对象起始的标记，可能用于指示后续是其他内部优化对象
+
+##### ImageRoot枚举
+
+
+这个枚举定义了 ART 镜像中根对象的类型。
+
+- kDexCaches: 指向 Dex 缓存的根，Dex 缓存存储了类、字段、方法的查找结果，加速运行时解析。
+
+- kClassRoots: 指向所有在镜像中定义的类的根，这些类是应用程序的基础结构。
+
+- kSpecialRoots: 这是一个特殊的根，它的具体含义会根据镜像类型（引导镜像或应用镜像）而有所不同。
+
+- 别名 (Aliases) 解释了 kSpecialRoots 在不同情况下的含义：
+
+    - kAppImageClassLoader = kSpecialRoots: 如果是应用镜像，kSpecialRoots 指向用于构建此应用镜像的类加载器（ClassLoader）。类加载器是加载和管理 Java 类的关键组件。
+
+    - kBootImageLiveObjects = kSpecialRoots: 如果是引导镜像，kSpecialRoots 指向一个数组，其中包含了必须在引导镜像中保持活跃的特定对象（详见 BootImageLiveObjects）。
+
+    - kAppImageOatHeader = kSpecialRoots: 如果是应用镜像，kSpecialRoots 也可能指向一个字节数组，其中包含：
+
+      - 一个伪造的 OatHeader，用于检查镜像是否可以加载到当前运行时。
+
+      - Dex 文件的校验和。
+
+- kImageRootsMax: 枚举元素的总数，表示根对象的最大数量。
+
+##### ImageMethod枚举
+
+- kResolutionMethod
+
+- kImtConflictMethod
+
+- kImtUnimplementedMethod
+
+- kSaveAllCalleeSavesMethod
+
+- kSaveRefsOnlyMethod
+
+- kSaveRefsAndArgsMethod
+
+- kSaveEverythingMethod
+
+- kSaveEverythingMethodForClinit
+
+- kSaveEverythingMethodForSuspendCheck
+
+- kImageMethodsCount
+
+
+
+#### ImageHeader::Block 类
+
+Block 类描述了镜像文件中的一个数据块。每个 Block 对象包含以下信息：
+
+- storage_mode_: 存储模式，指示该数据块是未压缩还是使用 LZ4/LZ4HC 压缩。
+
+- data_offset_: 压缩或未压缩数据在文件中的偏移量。
+
+- data_size_: 压缩或未压缩数据的大小。
+
+- image_offset_: 解压缩后数据在镜像内存中的预期偏移量。
+
+- image_size_: 解压缩后数据的原始大小。
+
+- Block 类提供了 Decompress 方法（此处仅声明）以及获取这些信息的方法。
+
+#### ImageHeader 类成员变量
+
+ImageHeader 类包含了大量的成员变量，这些变量共同描述了镜像文件的各个方面：
+
+- magic_ 和 version_: 魔数和版本号
+
+- image_reservation_size_: 镜像文件的总内存预留大小。对于引导镜像或引导镜像扩展，它包括所有镜像文件和 Oat 文件的预留；对于应用镜像，它通常是 image_size_ 对齐到页面大小后的值。
+
+- component_count_: 构成镜像的组件（例如 JAR 文件）的数量。
+
+- image_begin_: 镜像文件在内存中映射的起始地址。
+
+- image_size_: 镜像的实际大小（未进行页面对齐）。
+
+- image_checksum_: 镜像文件的校验和。
+
+- oat_checksum_: 关联 Oat 文件的校验和，用于加载时的一致性检查。
+
+- oat_file_begin_, oat_data_begin_, oat_data_end_, oat_file_end_: Oat 文件相关的起始和结束地址，用于定位 Oat 文件及其数据部分。
+
+- boot_image_begin_, boot_image_size_, boot_image_component_count_, boot_image_checksum_: 引导镜像（Boot Image）相关的信息，主要用于引导镜像扩展和应用镜像头。这些字段描述了当前镜像所依赖的引导镜像的起始地址、大小、组件数量和校验和。
+
+- image_roots_: 指向一个 Object[] 数组的绝对地址，该数组包含从镜像重新初始化所需的根对象。
+
+- pointer_size_: 指针大小，影响 ArtMethod 等结构的大小。
+
+- sections_: 一个 ImageSection 数组，描述了镜像内部的各个逻辑节（如对象节、方法节、字符串节等）的偏移量和大小。ImageSections 枚举定义了这些节的类型。
+
+- image_methods_: 一个 uint64_t 数组，存储了特定镜像方法的地址，如解析方法、冲突方法等。
+
+- data_size_: 镜像数据的实际大小（不包括位图和头部）。对于压缩镜像，这是压缩后的数据大小。
+
+- blocks_offset_ 和 blocks_count_: 仅用于压缩镜像，指示 Block 数组在文件中的偏移量和数量。
+
+### ImageFileGuard 类
+
+
+ImageFileGuard 是一个辅助类，用于安全地管理镜像文件写入过程。封装了一个 `std::unique_ptr<File>`，确保文件在不再需要时被正确关闭。
+
+如果文件写入或关闭失败，它的析构函数会自动调用 Erase() 方法删除不完整的镜像文件，防止留下损坏的文件。
+
+WriteHeaderAndClose(): 负责将 ImageHeader 写入文件头部，并关闭文件。如果写入或关闭过程中出现任何错误，它会设置错误消息并返回 false，同时通过 FlushCloseOrErase() 方法确保文件被清理。
+
