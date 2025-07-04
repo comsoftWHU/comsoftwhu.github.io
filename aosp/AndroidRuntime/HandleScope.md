@@ -1,3 +1,13 @@
+---
+layout: default
+title: ART的C++代码对Java堆对象的访问--HandleScope
+nav_order: 1
+parent: AndroidRuntime
+grand_parent: AOSP
+author: Anonymous Committer
+---
+
+
 # HandleScope
 
 `HandleScope` 的核心作用是**在 ART 的 C++ Native 代码中安全地管理对 Java 对象的引用，确保这些对象不会被GC错误地回收**。
@@ -39,6 +49,8 @@ class Handle : public ValueObject {
   StackReference<mirror::Object>* reference_;
   ......
 };
+```
+
 
 MutableHandle可以改变reference_指向的StackReference中存储的指针
 
