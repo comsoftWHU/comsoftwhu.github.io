@@ -1,4 +1,11 @@
-
+---
+layout: default
+title: ClassLinker
+nav_order: 1
+parent: AndroidRuntime
+grand_parent: AOSP
+author: Anonymous Committer
+---
 
 
 # ClassLinker
@@ -16,7 +23,7 @@ ClassLinker 是 ART在 AOSP 中负责“Java 类”加载与链接的核心组�
 
 ```mermaid
 flowchart TD
-    A[Start Runtime Initialization] --> B{IsAotCompiler?}
+    A[In Runtime Initialization] --> B{IsAotCompiler?}
     
     B -->|Yes| C[Create AotClassLinker via compiler_callbacks]
     B -->|No| D[Create Standard ClassLinker]
@@ -24,8 +31,8 @@ flowchart TD
     C --> E{HasBootImageSpace?}
     D --> E
     
-    E -->|Yes| F[Boot Image Path]
-    E -->|No| G[No Boot Image Path]
+    E -->|Yes| F[Boot Image]
+    E -->|No| G[No Boot Image]
     
     F --> H[class_linker_->InitFromBootImage]
     H --> I[Add Image Strings to InternTable]
@@ -41,15 +48,10 @@ flowchart TD
     N --> O[class_linker_->InitWithoutImage]
     O --> P[SetInstructionSet]
     P --> Q[Create CalleeSave Methods]
-    Q --> R[Complete - Runtime Ready]
+    Q --> R[Complete - class_linker Ready]
     
-    L --> S[Runtime Initialized with Boot Image]
-    R --> T[Runtime Initialized without Boot Image]
-    
-    style F fill:#e1f5fe
-    style G fill:#fff3e0
-    style S fill:#e8f5e8
-    style T fill:#fff9c4
+    L --> S[class_linker Initialized with Boot Image]
+    R --> T[class_linker Initialized without Boot Image]
 
 ```
 
@@ -70,13 +72,14 @@ flowchart TD
      ++failure_count;
    }
 ```
+
 通过 `ArtDexFileLoader` 尝试打开DEX。  
 成功时，会把对应的 `unique_ptr<DexFile>` 加入 `out_dex_files`；失败时记录错误并计数。
 
 ArtDexFileLoader会根据对应的Dex文件构造出对应的DexFile的对象
 
 
-###  InitWithout/FromBootImage 
+###  InitFromBootImage 
 
 
 存在2个初始化函数，分别在Runtime::Init的时候根据bootimage的有无进行初始化
@@ -96,579 +99,137 @@ ArtDexFileLoader会根据对应的Dex文件构造出对应的DexFile的对象
       REQUIRES(!Locks::dex_lock_);
 ```
 
-对于存在Bootimage的时候，
+对于存在Bootimage的时候，InitFromBootImage执行流程如下
 
-```cpp
-
-bool ClassLinker::InitFromBootImage(std::string* error_msg) {
-  VLOG(startup) << __FUNCTION__ << " entering";
-  CHECK(!init_done_);
-
-  Runtime* const runtime = Runtime::Current();
-  Thread* const self = Thread::Current();
-  gc::Heap* const heap = runtime->GetHeap();
-  std::vector<gc::space::ImageSpace*> spaces = heap->GetBootImageSpaces();
-  CHECK(!spaces.empty());
-  const ImageHeader& image_header = spaces[0]->GetImageHeader();
-  image_pointer_size_ = image_header.GetPointerSize();
-  if (UNLIKELY(image_pointer_size_ != PointerSize::k32 &&
-               image_pointer_size_ != PointerSize::k64)) {
-    *error_msg =
-        StringPrintf("Invalid image pointer size: %u", static_cast<uint32_t>(image_pointer_size_));
-    return false;
-  }
-  if (!runtime->IsAotCompiler()) {
-    // Only the Aot compiler supports having an image with a different pointer size than the
-    // runtime. This happens on the host for compiling 32 bit tests since we use a 64 bit libart
-    // compiler. We may also use 32 bit dex2oat on a system with 64 bit apps.
-    if (image_pointer_size_ != kRuntimePointerSize) {
-      *error_msg = StringPrintf("Runtime must use current image pointer size: %zu vs %zu",
-                                static_cast<size_t>(image_pointer_size_),
-                                sizeof(void*));
-      return false;
-    }
-  }
-  DCHECK(!runtime->HasResolutionMethod());
-  runtime->SetResolutionMethod(image_header.GetImageMethod(ImageHeader::kResolutionMethod));
-  runtime->SetImtConflictMethod(image_header.GetImageMethod(ImageHeader::kImtConflictMethod));
-  runtime->SetImtUnimplementedMethod(
-      image_header.GetImageMethod(ImageHeader::kImtUnimplementedMethod));
-  runtime->SetCalleeSaveMethod(
-      image_header.GetImageMethod(ImageHeader::kSaveAllCalleeSavesMethod),
-      CalleeSaveType::kSaveAllCalleeSaves);
-  runtime->SetCalleeSaveMethod(
-      image_header.GetImageMethod(ImageHeader::kSaveRefsOnlyMethod),
-      CalleeSaveType::kSaveRefsOnly);
-  runtime->SetCalleeSaveMethod(
-      image_header.GetImageMethod(ImageHeader::kSaveRefsAndArgsMethod),
-      CalleeSaveType::kSaveRefsAndArgs);
-  runtime->SetCalleeSaveMethod(
-      image_header.GetImageMethod(ImageHeader::kSaveEverythingMethod),
-      CalleeSaveType::kSaveEverything);
-  runtime->SetCalleeSaveMethod(
-      image_header.GetImageMethod(ImageHeader::kSaveEverythingMethodForClinit),
-      CalleeSaveType::kSaveEverythingForClinit);
-  runtime->SetCalleeSaveMethod(
-      image_header.GetImageMethod(ImageHeader::kSaveEverythingMethodForSuspendCheck),
-      CalleeSaveType::kSaveEverythingForSuspendCheck);
-
-  std::vector<const OatFile*> oat_files =
-      runtime->GetOatFileManager().RegisterImageOatFiles(spaces);
-  DCHECK(!oat_files.empty());
-  const OatHeader& default_oat_header = oat_files[0]->GetOatHeader();
-  jni_dlsym_lookup_trampoline_ = default_oat_header.GetJniDlsymLookupTrampoline();
-  jni_dlsym_lookup_critical_trampoline_ = default_oat_header.GetJniDlsymLookupCriticalTrampoline();
-  quick_resolution_trampoline_ = default_oat_header.GetQuickResolutionTrampoline();
-  quick_imt_conflict_trampoline_ = default_oat_header.GetQuickImtConflictTrampoline();
-  quick_generic_jni_trampoline_ = default_oat_header.GetQuickGenericJniTrampoline();
-  quick_to_interpreter_bridge_trampoline_ = default_oat_header.GetQuickToInterpreterBridge();
-  nterp_trampoline_ = default_oat_header.GetNterpTrampoline();
-  if (kIsDebugBuild) {
-    // Check that the other images use the same trampoline.
-    for (size_t i = 1; i < oat_files.size(); ++i) {
-      const OatHeader& ith_oat_header = oat_files[i]->GetOatHeader();
-      const void* ith_jni_dlsym_lookup_trampoline_ =
-          ith_oat_header.GetJniDlsymLookupTrampoline();
-      const void* ith_jni_dlsym_lookup_critical_trampoline_ =
-          ith_oat_header.GetJniDlsymLookupCriticalTrampoline();
-      const void* ith_quick_resolution_trampoline =
-          ith_oat_header.GetQuickResolutionTrampoline();
-      const void* ith_quick_imt_conflict_trampoline =
-          ith_oat_header.GetQuickImtConflictTrampoline();
-      const void* ith_quick_generic_jni_trampoline =
-          ith_oat_header.GetQuickGenericJniTrampoline();
-      const void* ith_quick_to_interpreter_bridge_trampoline =
-          ith_oat_header.GetQuickToInterpreterBridge();
-      const void* ith_nterp_trampoline =
-          ith_oat_header.GetNterpTrampoline();
-      if (ith_jni_dlsym_lookup_trampoline_ != jni_dlsym_lookup_trampoline_ ||
-          ith_jni_dlsym_lookup_critical_trampoline_ != jni_dlsym_lookup_critical_trampoline_ ||
-          ith_quick_resolution_trampoline != quick_resolution_trampoline_ ||
-          ith_quick_imt_conflict_trampoline != quick_imt_conflict_trampoline_ ||
-          ith_quick_generic_jni_trampoline != quick_generic_jni_trampoline_ ||
-          ith_quick_to_interpreter_bridge_trampoline != quick_to_interpreter_bridge_trampoline_ ||
-          ith_nterp_trampoline != nterp_trampoline_) {
-        // Make sure that all methods in this image do not contain those trampolines as
-        // entrypoints. Otherwise the class-linker won't be able to work with a single set.
-        TrampolineCheckData data;
-        data.error = false;
-        data.pointer_size = GetImagePointerSize();
-        data.quick_resolution_trampoline = ith_quick_resolution_trampoline;
-        data.quick_imt_conflict_trampoline = ith_quick_imt_conflict_trampoline;
-        data.quick_generic_jni_trampoline = ith_quick_generic_jni_trampoline;
-        data.quick_to_interpreter_bridge_trampoline = ith_quick_to_interpreter_bridge_trampoline;
-        data.nterp_trampoline = ith_nterp_trampoline;
-        ReaderMutexLock mu(self, *Locks::heap_bitmap_lock_);
-        auto visitor = [&](mirror::Object* obj) REQUIRES_SHARED(Locks::mutator_lock_) {
-          if (obj->IsClass()) {
-            ObjPtr<mirror::Class> klass = obj->AsClass();
-            for (ArtMethod& m : klass->GetMethods(data.pointer_size)) {
-              const void* entrypoint =
-                  m.GetEntryPointFromQuickCompiledCodePtrSize(data.pointer_size);
-              if (entrypoint == data.quick_resolution_trampoline ||
-                  entrypoint == data.quick_imt_conflict_trampoline ||
-                  entrypoint == data.quick_generic_jni_trampoline ||
-                  entrypoint == data.quick_to_interpreter_bridge_trampoline) {
-                data.m = &m;
-                data.error = true;
-                return;
-              }
-            }
-          }
-        };
-        spaces[i]->GetLiveBitmap()->Walk(visitor);
-        if (data.error) {
-          ArtMethod* m = data.m;
-          LOG(ERROR) << "Found a broken ArtMethod: " << ArtMethod::PrettyMethod(m);
-          *error_msg = "Found an ArtMethod with a bad entrypoint";
-          return false;
-        }
-      }
-    }
-  }
-
-  class_roots_ = GcRoot<mirror::ObjectArray<mirror::Class>>(
-      ObjPtr<mirror::ObjectArray<mirror::Class>>::DownCast(
-          image_header.GetImageRoot(ImageHeader::kClassRoots)));
-  DCHECK_EQ(GetClassRoot<mirror::Class>(this)->GetClassFlags(), mirror::kClassFlagClass);
-
-  DCHECK_EQ(GetClassRoot<mirror::Object>(this)->GetObjectSize(), sizeof(mirror::Object));
-  ObjPtr<mirror::ObjectArray<mirror::Object>> boot_image_live_objects =
-      ObjPtr<mirror::ObjectArray<mirror::Object>>::DownCast(
-          image_header.GetImageRoot(ImageHeader::kBootImageLiveObjects));
-  runtime->SetSentinel(boot_image_live_objects->Get(ImageHeader::kClearedJniWeakSentinel));
-  DCHECK(runtime->GetSentinel().Read()->GetClass() == GetClassRoot<mirror::Object>(this));
-
-  // Boot class loader, use a null handle.
-  if (!AddImageSpaces(ArrayRef<gc::space::ImageSpace*>(spaces),
-                      ScopedNullHandle<mirror::ClassLoader>(),
-                      /*context=*/nullptr,
-                      &boot_dex_files_,
-                      error_msg)) {
-    return false;
-  }
-  // We never use AOT code for debuggable.
-  if (!runtime->IsJavaDebuggable()) {
-    for (gc::space::ImageSpace* space : spaces) {
-      const ImageHeader& header = space->GetImageHeader();
-      header.VisitJniStubMethods([&](ArtMethod* method)
-          REQUIRES_SHARED(Locks::mutator_lock_) {
-        const void* stub = method->GetOatMethodQuickCode(image_pointer_size_);
-        boot_image_jni_stubs_.Put(std::make_pair(JniStubKey(method), stub));
-        return method;
-      }, space->Begin(), image_pointer_size_);
-    }
-  }
-
-  InitializeObjectVirtualMethodHashes(GetClassRoot<mirror::Object>(this),
-                                      image_pointer_size_,
-                                      ArrayRef<uint32_t>(object_virtual_method_hashes_));
-  FinishInit(self);
-
-  VLOG(startup) << __FUNCTION__ << " exiting";
-  return true;
-}
-
+```mermaid
+flowchart TD
+    A[InitFromBootImage] --> B[获取 BootImageSpaces]
+    B --> C[验证 ImageHeader 和 PointerSize]
+    C --> D{PointerSize 有效?}
+    
+    D -->|No| E[返回错误]
+    D -->|Yes| F[从Image中读取，初始化一些关键的内置方法： <br/> Runtime三个ArtMethod指针成员 resolution_method_ 、 imt_conflict_method_ 、 imt_unimplemented_method_ <br/> 这些是 ART 用于处理动态链接、处理接口方法表（IMT）冲突、接口方法未实现的高度优化的小段代码。]
+    
+    F --> G[从Image中读取，使用 SetCalleeSaveMethod 初始化6个CalleeSave方法，保存在Runtime指针数组类型的callee_save_methods_中。因为ART 并不总是需要保存所有 Callee-Save 寄存器。为了极致的性能，它准备了多套方案，包括：<br/>  kSaveAllCalleeSavesMethod、 kSaveRefsOnlyMethod、 kSaveRefsAndArgsMethod、 kSaveEverythingMethod、 kSaveEverythingMethodForClinit、 kSaveEverythingMethodForSuspendCheck]
+    
+    G --> H[注册每个ImageSpace对应的OatFiles到oat_file_manager中]
+    H --> I[从第一个 OAT 文件中，加载并设置一系列关键的Trampoline函数指针。]
+    
+    I --> J[Trampoline函数包括:<br/> jni_dlsym_lookup_trampoline_<br/> quick_resolution_trampoline_<br/> quick_imt_conflict_trampoline_<br/> quick_generic_jni_trampoline_ <br/> quick_to_interpreter_bridge_trampoline_<br/> nterp_trampoline_]
+    
+    J --> K{Debug 模式?}
+    K -->|Yes| L[验证所有 OatFile 的 Trampoline 一致性]
+    K -->|No| M[从image中读取Java核心的一些类对象到一个类对象数组的GCRoot中class_roots_]
+    
+    L --> N{Trampoline 一致?}
+    N -->|No| O[检查 ArtMethod 入口点]
+    N -->|Yes| M
+    
+    O --> P{发现错误入口点?}
+    P -->|Yes| Q[返回错误]
+    P -->|No| M
+    
+    M --> R[从 ImageHeader 获取 boot_image_live_objects，这些是必须在运行时保持存活的关键对象]
+    R --> S[从boot_image_live_objects中拿到Sentinel 对象，设置Runtime的成员sentinel_，用于处理 JNI（例如，已被清除的弱引用）和 JDWP中的各种无效引用情况。]
+    S --> T[AddImageSpaces<br/>1. 找到镜像中包含的所有 DexFile 对象，添加到ClassLinker 的 boot_dex_files_ <br/> 2.根据当前运行时对镜像内容进行一些调整，比如设置ArtMethod的各类 trampoline，设置hotness_threshold <br/> 3. 将所有类批量添加到 ClassLoader 的 class_table（Boot class path table的是ClassLinker的boot_class_table_），使其可被查找和使用]
+    
+    T --> U{非调试模式?}
+    U -->|Yes| V[缓存 JNI Stub 方法到boot_image_jni_stubs_，这是针对不同参数的JNI调用生成的专用的trampoline函数]
+    U -->|No| W[InitializeObjectVirtualMethodHashes 把当前这个ClassLinker的每一个VirtualMethods的hash值预先计算出来]
+    
+    V --> W
+    W --> X[FinishInit<br/>1. 绑定 String 的初始化方法, String 是一个非常特殊的类, ART 内部有Ljava/lang/StringFactory;专门处理各种String的初始化工作 <br/> 2. 确保所有class_roots_类都已成功加载并正确初始化 <br/> 3. 设置 init_done_ 标志 <br/> 4.预初始化 StackOverflowError]
+    X --> Y[初始化完成]
+    
+    style A fill:#e1f5fe
+    style E fill:#ffebee
+    style Q fill:#ffebee
+    style Y fill:#e8f5e8
+    style F fill:#fff3e0
+    style I fill:#f3e5f5
+    style M fill:#e0f2f1
 
 ```
+#### 各种Trampoline函数解释
+
+- jni_dlsym_lookup_trampoline_：用于处理动态注册的 JNI 方法。当 Java 代码调用一个通过 C++ RegisterNatives 函数绑定的 native 方法时，会走到这个跳板来进行符号查找
+- jni_dlsym_lookup_critical_trampoline_ 同上，只用于标记为 @CriticalNative 的 JNI 方法（不使用Java对象）
+- quick_resolution_trampoline_： 当一个方法第一次被调用时，ART 需要找到它在内存中的真正地址，然后把调用点的指令修正为直接指向目标地址，这样下一次调用就快了 
+- quick_imt_conflict_trampoline_： 如果一个类实现了多个接口，且这些接口中有签名相同的方法，就会产生“冲突”。调用这种冲突方法时，就会先跳转到这个跳板，由它来执行更复杂的逻辑，以确定到底该调用哪个实现。
+- quick_generic_jni_trampoline_： 通用 JNI 跳板。这是最标准、最常用的 JNI 调用入口。
+- quick_to_interpreter_bridge_trampoline_： AOT 编译的代码需要调用一个没有被编译的方法时，执行流就会跳转到这个跳板。它负责将当前的执行状态从“原生模式”转为“解释模式”，然后由解释器来执行目标方法。
+- nterp_trampoline_ ： 这个跳板是所有需要由 Nterp 执行的方法的入口点。
+
+#### boot_image_live_objects有哪些？
+
+BootImageLiveObjects枚举中定义
+
+- kOomeWhenThrowingException：  是一个OutOfMemoryError 对象。当虚拟机在抛出任何普通异常的过程中，突然耗尽了内存时，使用这个预分配的 OutOfMemoryError。
+
+- kOomeWhenThrowingOome：  OutOfMemoryError 对象。 这是更极端的情况。当虚拟机在抛出 OutOfMemoryError 的过程中，又一次耗尽内存时，使用这个实例。
+
+- kOomeWhenHandlingStackOverflow： 当发生栈溢出 StackOverflowError 时，处理这个错误本身也可能需要少量堆内存。如果此时堆内存也刚好用完，就使用这个预分配的 OutOfMemoryError 来报告这个复合型灾难。
+
+- kNoClassDefFoundError： NoClassDefFoundError 对象。 找不到类定义。
+
+- kClearedJniWeakSentinel：  一个普通的 Object。用于处理 JNI（例如，已被清除的弱引用）和 JDWP（Java 调试线协议，例如，无效的引用）中的各种无效情况。
+
+- kIntrinsicObjectsStart： 这不是一个对象，而是一个标记。它标志着在这个索引之后，数组里存放的是用于"Intrinsics"（内建函数）的预分配对象。它起到了一个分割线的作用。
 
 
+##### Sentinel怎么起作用的？
+
+SweepJniWeakGlobals 函数专门负责清理 JNI 弱全局引用
 
 ```cpp
-
-bool ClassLinker::InitWithoutImage(std::vector<std::unique_ptr<const DexFile>> boot_class_path,
-                                   std::string* error_msg) {
-  VLOG(startup) << "ClassLinker::Init";
-
-  Thread* const self = Thread::Current();
+void IndirectReferenceTable::SweepJniWeakGlobals(IsMarkedVisitor* visitor) {
+  CHECK_EQ(kind_, kWeakGlobal);
+  MutexLock mu(Thread::Current(), *Locks::jni_weak_globals_lock_);
   Runtime* const runtime = Runtime::Current();
-  gc::Heap* const heap = runtime->GetHeap();
+  for (size_t i = 0, capacity = Capacity(); i != capacity; ++i) {
+    GcRoot<mirror::Object>* entry = table_[i].GetReference();
+    // Need to skip null here to distinguish between null entries and cleared weak ref entries.
+    if (!entry->IsNull()) {
+      mirror::Object* obj = entry->Read<kWithoutReadBarrier>();
+      // 对于每个有效的引用，它会通过 visitor->IsMarked(obj) 来询问垃圾回收器：“这个引用指向的 Java 对象在刚才的 GC 过程中是否还存活？”
 
-  CHECK(!heap->HasBootImageSpace()) << "Runtime has image. We should use it.";
-  CHECK(!init_done_);
+      mirror::Object* new_obj = visitor->IsMarked(obj);
 
-  // Use the pointer size from the runtime since we are probably creating the image.
-  image_pointer_size_ = InstructionSetPointerSize(runtime->GetInstructionSet());
-
-  // java_lang_Class comes first, it's needed for AllocClass
-  // The GC can't handle an object with a null class since we can't get the size of this object.
-  heap->IncrementDisableMovingGC(self);
-  StackHandleScope<64> hs(self);  // 64 is picked arbitrarily.
-  auto class_class_size = mirror::Class::ClassClassSize(image_pointer_size_);
-  // Allocate the object as non-movable so that there are no cases where Object::IsClass returns
-  // the incorrect result when comparing to-space vs from-space.
-  Handle<mirror::Class> java_lang_Class(hs.NewHandle(ObjPtr<mirror::Class>::DownCast(
-      heap->AllocNonMovableObject(self, nullptr, class_class_size, VoidFunctor()))));
-  CHECK(java_lang_Class != nullptr);
-  java_lang_Class->SetClassFlags(mirror::kClassFlagClass);
-  java_lang_Class->SetClass(java_lang_Class.Get());
-  if (kUseBakerReadBarrier) {
-    java_lang_Class->AssertReadBarrierState();
-  }
-  java_lang_Class->SetClassSize(class_class_size);
-  java_lang_Class->SetPrimitiveType(Primitive::kPrimNot);
-  heap->DecrementDisableMovingGC(self);
-  // AllocClass(ObjPtr<mirror::Class>) can now be used
-
-  // Class[] is used for reflection support.
-  auto class_array_class_size = mirror::ObjectArray<mirror::Class>::ClassSize(image_pointer_size_);
-  Handle<mirror::Class> class_array_class(hs.NewHandle(
-      AllocClass(self, java_lang_Class.Get(), class_array_class_size)));
-  class_array_class->SetComponentType(java_lang_Class.Get());
-
-  // java_lang_Object comes next so that object_array_class can be created.
-  Handle<mirror::Class> java_lang_Object(hs.NewHandle(
-      AllocClass(self, java_lang_Class.Get(), mirror::Object::ClassSize(image_pointer_size_))));
-  CHECK(java_lang_Object != nullptr);
-  // backfill Object as the super class of Class.
-  java_lang_Class->SetSuperClass(java_lang_Object.Get());
-  mirror::Class::SetStatus(java_lang_Object, ClassStatus::kLoaded, self);
-
-  java_lang_Object->SetObjectSize(sizeof(mirror::Object));
-  // Allocate in non-movable so that it's possible to check if a JNI weak global ref has been
-  // cleared without triggering the read barrier and unintentionally mark the sentinel alive.
-  runtime->SetSentinel(heap->AllocNonMovableObject(self,
-                                                   java_lang_Object.Get(),
-                                                   java_lang_Object->GetObjectSize(),
-                                                   VoidFunctor()));
-
-  // Initialize the SubtypeCheck bitstring for java.lang.Object and java.lang.Class.
-  if (kBitstringSubtypeCheckEnabled) {
-    // It might seem the lock here is unnecessary, however all the SubtypeCheck
-    // functions are annotated to require locks all the way down.
-    //
-    // We take the lock here to avoid using NO_THREAD_SAFETY_ANALYSIS.
-    MutexLock subtype_check_lock(Thread::Current(), *Locks::subtype_check_lock_);
-    SubtypeCheck<ObjPtr<mirror::Class>>::EnsureInitialized(java_lang_Object.Get());
-    SubtypeCheck<ObjPtr<mirror::Class>>::EnsureInitialized(java_lang_Class.Get());
-  }
-
-  // Object[] next to hold class roots.
-  Handle<mirror::Class> object_array_class(hs.NewHandle(
-      AllocClass(self, java_lang_Class.Get(),
-                 mirror::ObjectArray<mirror::Object>::ClassSize(image_pointer_size_))));
-  object_array_class->SetComponentType(java_lang_Object.Get());
-
-  // Setup java.lang.String.
-  //
-  // We make this class non-movable for the unlikely case where it were to be
-  // moved by a sticky-bit (minor) collection when using the Generational
-  // Concurrent Copying (CC) collector, potentially creating a stale reference
-  // in the `klass_` field of one of its instances allocated in the Large-Object
-  // Space (LOS) -- see the comment about the dirty card scanning logic in
-  // art::gc::collector::ConcurrentCopying::MarkingPhase.
-  Handle<mirror::Class> java_lang_String(hs.NewHandle(
-      AllocClass</* kMovable= */ false>(
-          self, java_lang_Class.Get(), mirror::String::ClassSize(image_pointer_size_))));
-  java_lang_String->SetStringClass();
-  mirror::Class::SetStatus(java_lang_String, ClassStatus::kResolved, self);
-
-  // Setup java.lang.ref.Reference.
-  Handle<mirror::Class> java_lang_ref_Reference(hs.NewHandle(
-      AllocClass(self, java_lang_Class.Get(), mirror::Reference::ClassSize(image_pointer_size_))));
-  java_lang_ref_Reference->SetObjectSize(mirror::Reference::InstanceSize());
-  mirror::Class::SetStatus(java_lang_ref_Reference, ClassStatus::kResolved, self);
-
-  // Create storage for root classes, save away our work so far (requires descriptors).
-  class_roots_ = GcRoot<mirror::ObjectArray<mirror::Class>>(
-      mirror::ObjectArray<mirror::Class>::Alloc(self,
-                                                object_array_class.Get(),
-                                                static_cast<int32_t>(ClassRoot::kMax)));
-  CHECK(!class_roots_.IsNull());
-  SetClassRoot(ClassRoot::kJavaLangClass, java_lang_Class.Get());
-  SetClassRoot(ClassRoot::kJavaLangObject, java_lang_Object.Get());
-  SetClassRoot(ClassRoot::kClassArrayClass, class_array_class.Get());
-  SetClassRoot(ClassRoot::kObjectArrayClass, object_array_class.Get());
-  SetClassRoot(ClassRoot::kJavaLangString, java_lang_String.Get());
-  SetClassRoot(ClassRoot::kJavaLangRefReference, java_lang_ref_Reference.Get());
-
-  // Fill in the empty iftable. Needs to be done after the kObjectArrayClass root is set.
-  java_lang_Object->SetIfTable(AllocIfTable(self, 0, object_array_class.Get()));
-
-  // Create array interface entries to populate once we can load system classes.
-  object_array_class->SetIfTable(AllocIfTable(self, 2, object_array_class.Get()));
-  DCHECK_EQ(GetArrayIfTable(), object_array_class->GetIfTable());
-
-  // Setup the primitive type classes.
-  CreatePrimitiveClass(self, Primitive::kPrimBoolean, ClassRoot::kPrimitiveBoolean);
-  CreatePrimitiveClass(self, Primitive::kPrimByte, ClassRoot::kPrimitiveByte);
-  CreatePrimitiveClass(self, Primitive::kPrimChar, ClassRoot::kPrimitiveChar);
-  CreatePrimitiveClass(self, Primitive::kPrimShort, ClassRoot::kPrimitiveShort);
-  CreatePrimitiveClass(self, Primitive::kPrimInt, ClassRoot::kPrimitiveInt);
-  CreatePrimitiveClass(self, Primitive::kPrimLong, ClassRoot::kPrimitiveLong);
-  CreatePrimitiveClass(self, Primitive::kPrimFloat, ClassRoot::kPrimitiveFloat);
-  CreatePrimitiveClass(self, Primitive::kPrimDouble, ClassRoot::kPrimitiveDouble);
-  CreatePrimitiveClass(self, Primitive::kPrimVoid, ClassRoot::kPrimitiveVoid);
-
-  // Allocate the primitive array classes. We need only the native pointer
-  // array at this point (int[] or long[], depending on architecture) but
-  // we shall perform the same setup steps for all primitive array classes.
-  AllocPrimitiveArrayClass(self, ClassRoot::kPrimitiveBoolean, ClassRoot::kBooleanArrayClass);
-  AllocPrimitiveArrayClass(self, ClassRoot::kPrimitiveByte, ClassRoot::kByteArrayClass);
-  AllocPrimitiveArrayClass(self, ClassRoot::kPrimitiveChar, ClassRoot::kCharArrayClass);
-  AllocPrimitiveArrayClass(self, ClassRoot::kPrimitiveShort, ClassRoot::kShortArrayClass);
-  AllocPrimitiveArrayClass(self, ClassRoot::kPrimitiveInt, ClassRoot::kIntArrayClass);
-  AllocPrimitiveArrayClass(self, ClassRoot::kPrimitiveLong, ClassRoot::kLongArrayClass);
-  AllocPrimitiveArrayClass(self, ClassRoot::kPrimitiveFloat, ClassRoot::kFloatArrayClass);
-  AllocPrimitiveArrayClass(self, ClassRoot::kPrimitiveDouble, ClassRoot::kDoubleArrayClass);
-
-  // now that these are registered, we can use AllocClass() and AllocObjectArray
-
-  // Set up DexCache. This cannot be done later since AppendToBootClassPath calls AllocDexCache.
-  Handle<mirror::Class> java_lang_DexCache(hs.NewHandle(
-      AllocClass(self, java_lang_Class.Get(), mirror::DexCache::ClassSize(image_pointer_size_))));
-  SetClassRoot(ClassRoot::kJavaLangDexCache, java_lang_DexCache.Get());
-  java_lang_DexCache->SetDexCacheClass();
-  java_lang_DexCache->SetObjectSize(mirror::DexCache::InstanceSize());
-  mirror::Class::SetStatus(java_lang_DexCache, ClassStatus::kResolved, self);
-
-
-  // Setup dalvik.system.ClassExt
-  Handle<mirror::Class> dalvik_system_ClassExt(hs.NewHandle(
-      AllocClass(self, java_lang_Class.Get(), mirror::ClassExt::ClassSize(image_pointer_size_))));
-  SetClassRoot(ClassRoot::kDalvikSystemClassExt, dalvik_system_ClassExt.Get());
-  mirror::Class::SetStatus(dalvik_system_ClassExt, ClassStatus::kResolved, self);
-
-  // Set up array classes for string, field, method
-  Handle<mirror::Class> object_array_string(hs.NewHandle(
-      AllocClass(self, java_lang_Class.Get(),
-                 mirror::ObjectArray<mirror::String>::ClassSize(image_pointer_size_))));
-  object_array_string->SetComponentType(java_lang_String.Get());
-  SetClassRoot(ClassRoot::kJavaLangStringArrayClass, object_array_string.Get());
-
-  LinearAlloc* linear_alloc = runtime->GetLinearAlloc();
-  // Create runtime resolution and imt conflict methods.
-  runtime->SetResolutionMethod(runtime->CreateResolutionMethod());
-  runtime->SetImtConflictMethod(runtime->CreateImtConflictMethod(linear_alloc));
-  runtime->SetImtUnimplementedMethod(runtime->CreateImtConflictMethod(linear_alloc));
-
-  // Setup boot_class_path_ and register class_path now that we can use AllocObjectArray to create
-  // DexCache instances. Needs to be after String, Field, Method arrays since AllocDexCache uses
-  // these roots.
-  if (boot_class_path.empty()) {
-    *error_msg = "Boot classpath is empty.";
-    return false;
-  }
-  for (auto& dex_file : boot_class_path) {
-    if (dex_file == nullptr) {
-      *error_msg = "Null dex file.";
-      return false;
+      // 如果对象存活: IsMarked 会返回这个对象的新地址（GC 可能是移动式的，对象地址会变）。代码会用新地址更新引用表。
+      // 如果对象已被回收: IsMarked 会返回 nullptr。这表明这个弱引用现在指向了一个不存在的对象，它变成了一个“悬空指针”。
+      if (new_obj == nullptr) {
+        // 在发现对象被回收后 (new_obj == nullptr) 用这个哨兵对象来覆盖引用表中原来的条目。
+        new_obj = runtime->GetClearedJniWeakGlobal();
+      }
+      *entry = GcRoot<mirror::Object>(new_obj);
     }
-    AppendToBootClassPath(self, dex_file.get());
-    boot_dex_files_.push_back(std::move(dex_file));
   }
-
-  // now we can use FindSystemClass
-
-  // Set up GenericJNI entrypoint. That is mainly a hack for common_compiler_test.h so that
-  // we do not need friend classes or a publicly exposed setter.
-  quick_generic_jni_trampoline_ = GetQuickGenericJniStub();
-  if (!runtime->IsAotCompiler()) {
-    // We need to set up the generic trampolines since we don't have an image.
-    jni_dlsym_lookup_trampoline_ = GetJniDlsymLookupStub();
-    jni_dlsym_lookup_critical_trampoline_ = GetJniDlsymLookupCriticalStub();
-    quick_resolution_trampoline_ = GetQuickResolutionStub();
-    quick_imt_conflict_trampoline_ = GetQuickImtConflictStub();
-    quick_generic_jni_trampoline_ = GetQuickGenericJniStub();
-    quick_to_interpreter_bridge_trampoline_ = GetQuickToInterpreterBridge();
-    nterp_trampoline_ = interpreter::GetNterpEntryPoint();
-  }
-
-  // Object, String, ClassExt and DexCache need to be rerun through FindSystemClass to finish init
-  // We also need to immediately clear the finalizable flag for Object so that other classes are
-  // not erroneously marked as finalizable. (Object defines an empty finalizer, so that other
-  // classes can override it but it is not itself finalizable.)
-  mirror::Class::SetStatus(java_lang_Object, ClassStatus::kNotReady, self);
-  CheckSystemClass(self, java_lang_Object, "Ljava/lang/Object;");
-  CHECK(java_lang_Object->IsFinalizable());
-  java_lang_Object->ClearFinalizable();
-  CHECK_EQ(java_lang_Object->GetObjectSize(), mirror::Object::InstanceSize());
-  mirror::Class::SetStatus(java_lang_String, ClassStatus::kNotReady, self);
-  CheckSystemClass(self, java_lang_String, "Ljava/lang/String;");
-  mirror::Class::SetStatus(java_lang_DexCache, ClassStatus::kNotReady, self);
-  CheckSystemClass(self, java_lang_DexCache, "Ljava/lang/DexCache;");
-  CHECK_EQ(java_lang_DexCache->GetObjectSize(), mirror::DexCache::InstanceSize());
-  mirror::Class::SetStatus(dalvik_system_ClassExt, ClassStatus::kNotReady, self);
-  CheckSystemClass(self, dalvik_system_ClassExt, "Ldalvik/system/ClassExt;");
-  CHECK_EQ(dalvik_system_ClassExt->GetObjectSize(), mirror::ClassExt::InstanceSize());
-
-  // Run Class through FindSystemClass. This initializes the dex_cache_ fields and register it
-  // in class_table_.
-  CheckSystemClass(self, java_lang_Class, "Ljava/lang/Class;");
-
-  // Setup core array classes, i.e. Object[], String[] and Class[] and primitive
-  // arrays - can't be done until Object has a vtable and component classes are loaded.
-  FinishCoreArrayClassSetup(ClassRoot::kObjectArrayClass);
-  FinishCoreArrayClassSetup(ClassRoot::kClassArrayClass);
-  FinishCoreArrayClassSetup(ClassRoot::kJavaLangStringArrayClass);
-  FinishCoreArrayClassSetup(ClassRoot::kBooleanArrayClass);
-  FinishCoreArrayClassSetup(ClassRoot::kByteArrayClass);
-  FinishCoreArrayClassSetup(ClassRoot::kCharArrayClass);
-  FinishCoreArrayClassSetup(ClassRoot::kShortArrayClass);
-  FinishCoreArrayClassSetup(ClassRoot::kIntArrayClass);
-  FinishCoreArrayClassSetup(ClassRoot::kLongArrayClass);
-  FinishCoreArrayClassSetup(ClassRoot::kFloatArrayClass);
-  FinishCoreArrayClassSetup(ClassRoot::kDoubleArrayClass);
-
-  // Setup the single, global copy of "iftable".
-  auto java_lang_Cloneable = hs.NewHandle(FindSystemClass(self, "Ljava/lang/Cloneable;"));
-  CHECK(java_lang_Cloneable != nullptr);
-  auto java_io_Serializable = hs.NewHandle(FindSystemClass(self, "Ljava/io/Serializable;"));
-  CHECK(java_io_Serializable != nullptr);
-  // We assume that Cloneable/Serializable don't have superinterfaces -- normally we'd have to
-  // crawl up and explicitly list all of the supers as well.
-  object_array_class->GetIfTable()->SetInterface(0, java_lang_Cloneable.Get());
-  object_array_class->GetIfTable()->SetInterface(1, java_io_Serializable.Get());
-
-  // Check Class[] and Object[]'s interfaces.
-  CHECK_EQ(java_lang_Cloneable.Get(), class_array_class->GetDirectInterface(0));
-  CHECK_EQ(java_io_Serializable.Get(), class_array_class->GetDirectInterface(1));
-  CHECK_EQ(java_lang_Cloneable.Get(), object_array_class->GetDirectInterface(0));
-  CHECK_EQ(java_io_Serializable.Get(), object_array_class->GetDirectInterface(1));
-
-  CHECK_EQ(object_array_string.Get(),
-           FindSystemClass(self, GetClassRootDescriptor(ClassRoot::kJavaLangStringArrayClass)));
-
-  // The Enum class declares a "final" finalize() method to prevent subclasses from introducing
-  // a finalizer but it is not itself consedered finalizable. Load the Enum class now and clear
-  // the finalizable flag to prevent subclasses from being marked as finalizable.
-  CHECK_EQ(LookupClass(self, "Ljava/lang/Enum;", /*class_loader=*/ nullptr), nullptr);
-  Handle<mirror::Class> java_lang_Enum = hs.NewHandle(FindSystemClass(self, "Ljava/lang/Enum;"));
-  CHECK(java_lang_Enum->IsFinalizable());
-  java_lang_Enum->ClearFinalizable();
-
-  // End of special init trickery, all subsequent classes may be loaded via FindSystemClass.
-
-  // Create java.lang.reflect.Proxy root.
-  SetClassRoot(ClassRoot::kJavaLangReflectProxy,
-               FindSystemClass(self, "Ljava/lang/reflect/Proxy;"));
-
-  // Create java.lang.reflect.Field.class root.
-  ObjPtr<mirror::Class> class_root = FindSystemClass(self, "Ljava/lang/reflect/Field;");
-  CHECK(class_root != nullptr);
-  SetClassRoot(ClassRoot::kJavaLangReflectField, class_root);
-
-  // Create java.lang.reflect.Field array root.
-  class_root = FindSystemClass(self, "[Ljava/lang/reflect/Field;");
-  CHECK(class_root != nullptr);
-  SetClassRoot(ClassRoot::kJavaLangReflectFieldArrayClass, class_root);
-
-  // Create java.lang.reflect.Constructor.class root and array root.
-  class_root = FindSystemClass(self, "Ljava/lang/reflect/Constructor;");
-  CHECK(class_root != nullptr);
-  SetClassRoot(ClassRoot::kJavaLangReflectConstructor, class_root);
-  class_root = FindSystemClass(self, "[Ljava/lang/reflect/Constructor;");
-  CHECK(class_root != nullptr);
-  SetClassRoot(ClassRoot::kJavaLangReflectConstructorArrayClass, class_root);
-
-  // Create java.lang.reflect.Method.class root and array root.
-  class_root = FindSystemClass(self, "Ljava/lang/reflect/Method;");
-  CHECK(class_root != nullptr);
-  SetClassRoot(ClassRoot::kJavaLangReflectMethod, class_root);
-  class_root = FindSystemClass(self, "[Ljava/lang/reflect/Method;");
-  CHECK(class_root != nullptr);
-  SetClassRoot(ClassRoot::kJavaLangReflectMethodArrayClass, class_root);
-
-  // Create java.lang.invoke.CallSite.class root
-  class_root = FindSystemClass(self, "Ljava/lang/invoke/CallSite;");
-  CHECK(class_root != nullptr);
-  SetClassRoot(ClassRoot::kJavaLangInvokeCallSite, class_root);
-
-  // Create java.lang.invoke.MethodType.class root
-  class_root = FindSystemClass(self, "Ljava/lang/invoke/MethodType;");
-  CHECK(class_root != nullptr);
-  SetClassRoot(ClassRoot::kJavaLangInvokeMethodType, class_root);
-
-  // Create java.lang.invoke.MethodHandleImpl.class root
-  class_root = FindSystemClass(self, "Ljava/lang/invoke/MethodHandleImpl;");
-  CHECK(class_root != nullptr);
-  SetClassRoot(ClassRoot::kJavaLangInvokeMethodHandleImpl, class_root);
-  SetClassRoot(ClassRoot::kJavaLangInvokeMethodHandle, class_root->GetSuperClass());
-
-  // Create java.lang.invoke.MethodHandles.Lookup.class root
-  class_root = FindSystemClass(self, "Ljava/lang/invoke/MethodHandles$Lookup;");
-  CHECK(class_root != nullptr);
-  SetClassRoot(ClassRoot::kJavaLangInvokeMethodHandlesLookup, class_root);
-
-  // Create java.lang.invoke.VarHandle.class root
-  class_root = FindSystemClass(self, "Ljava/lang/invoke/VarHandle;");
-  CHECK(class_root != nullptr);
-  SetClassRoot(ClassRoot::kJavaLangInvokeVarHandle, class_root);
-
-  // Create java.lang.invoke.FieldVarHandle.class root
-  class_root = FindSystemClass(self, "Ljava/lang/invoke/FieldVarHandle;");
-  CHECK(class_root != nullptr);
-  SetClassRoot(ClassRoot::kJavaLangInvokeFieldVarHandle, class_root);
-
-  // Create java.lang.invoke.StaticFieldVarHandle.class root
-  class_root = FindSystemClass(self, "Ljava/lang/invoke/StaticFieldVarHandle;");
-  CHECK(class_root != nullptr);
-  SetClassRoot(ClassRoot::kJavaLangInvokeStaticFieldVarHandle, class_root);
-
-  // Create java.lang.invoke.ArrayElementVarHandle.class root
-  class_root = FindSystemClass(self, "Ljava/lang/invoke/ArrayElementVarHandle;");
-  CHECK(class_root != nullptr);
-  SetClassRoot(ClassRoot::kJavaLangInvokeArrayElementVarHandle, class_root);
-
-  // Create java.lang.invoke.ByteArrayViewVarHandle.class root
-  class_root = FindSystemClass(self, "Ljava/lang/invoke/ByteArrayViewVarHandle;");
-  CHECK(class_root != nullptr);
-  SetClassRoot(ClassRoot::kJavaLangInvokeByteArrayViewVarHandle, class_root);
-
-  // Create java.lang.invoke.ByteBufferViewVarHandle.class root
-  class_root = FindSystemClass(self, "Ljava/lang/invoke/ByteBufferViewVarHandle;");
-  CHECK(class_root != nullptr);
-  SetClassRoot(ClassRoot::kJavaLangInvokeByteBufferViewVarHandle, class_root);
-
-  class_root = FindSystemClass(self, "Ldalvik/system/EmulatedStackFrame;");
-  CHECK(class_root != nullptr);
-  SetClassRoot(ClassRoot::kDalvikSystemEmulatedStackFrame, class_root);
-
-  // java.lang.ref classes need to be specially flagged, but otherwise are normal classes
-  // finish initializing Reference class
-  mirror::Class::SetStatus(java_lang_ref_Reference, ClassStatus::kNotReady, self);
-  CheckSystemClass(self, java_lang_ref_Reference, "Ljava/lang/ref/Reference;");
-  CHECK_EQ(java_lang_ref_Reference->GetObjectSize(), mirror::Reference::InstanceSize());
-  CHECK_EQ(java_lang_ref_Reference->GetClassSize(),
-           mirror::Reference::ClassSize(image_pointer_size_));
-  class_root = FindSystemClass(self, "Ljava/lang/ref/FinalizerReference;");
-  CHECK_EQ(class_root->GetClassFlags(), mirror::kClassFlagNormal);
-  class_root->SetClassFlags(class_root->GetClassFlags() | mirror::kClassFlagFinalizerReference);
-  class_root = FindSystemClass(self, "Ljava/lang/ref/PhantomReference;");
-  CHECK_EQ(class_root->GetClassFlags(), mirror::kClassFlagNormal);
-  class_root->SetClassFlags(class_root->GetClassFlags() | mirror::kClassFlagPhantomReference);
-  class_root = FindSystemClass(self, "Ljava/lang/ref/SoftReference;");
-  CHECK_EQ(class_root->GetClassFlags(), mirror::kClassFlagNormal);
-  class_root->SetClassFlags(class_root->GetClassFlags() | mirror::kClassFlagSoftReference);
-  class_root = FindSystemClass(self, "Ljava/lang/ref/WeakReference;");
-  CHECK_EQ(class_root->GetClassFlags(), mirror::kClassFlagNormal);
-  class_root->SetClassFlags(class_root->GetClassFlags() | mirror::kClassFlagWeakReference);
-
-  // Setup the ClassLoader, verifying the object_size_.
-  class_root = FindSystemClass(self, "Ljava/lang/ClassLoader;");
-  class_root->SetClassLoaderClass();
-  CHECK_EQ(class_root->GetObjectSize(), mirror::ClassLoader::InstanceSize());
-  SetClassRoot(ClassRoot::kJavaLangClassLoader, class_root);
-
-  // Set up java.lang.Throwable, java.lang.ClassNotFoundException, and
-  // java.lang.StackTraceElement as a convenience.
-  SetClassRoot(ClassRoot::kJavaLangThrowable, FindSystemClass(self, "Ljava/lang/Throwable;"));
-  SetClassRoot(ClassRoot::kJavaLangClassNotFoundException,
-               FindSystemClass(self, "Ljava/lang/ClassNotFoundException;"));
-  SetClassRoot(ClassRoot::kJavaLangStackTraceElement,
-               FindSystemClass(self, "Ljava/lang/StackTraceElement;"));
-  SetClassRoot(ClassRoot::kJavaLangStackTraceElementArrayClass,
-               FindSystemClass(self, "[Ljava/lang/StackTraceElement;"));
-  SetClassRoot(ClassRoot::kJavaLangClassLoaderArrayClass,
-               FindSystemClass(self, "[Ljava/lang/ClassLoader;"));
-
-  // Create conflict tables that depend on the class linker.
-  runtime->FixupConflictTables();
-
-  FinishInit(self);
-
-  VLOG(startup) << "ClassLinker::InitFromCompiler exiting";
-
-  return true;
 }
+```
+一个引用表条目如果是 nullptr，通常意味着这个位置是空的、未被使用。
+
+而一个条目如果是哨兵对象，则明确地表示“这里曾经有一个弱引用，但它指向的对象已经被 GC 回收了”。
+这样就清楚地区分了“未使用”和“已被清除”这两种完全不同的状态。
+
+通过使用哨兵对象，ART 的实现变得简单：所有被清除的弱引用都指向同一个哨-兵对象。因此，IsSameObject 函数的内部逻辑只需要判断 weak_ref 是不是指向哨兵对象即可，而不需要为每个弱引用维护一个单独的“是否已清除”的标志。
+
+
+### InitWithoutImage
+
+```mermaid
+graph TD
+    A[Start InitWithoutImage] --> B[禁止MovingGC，手动创建基础核心类 java_lang_Class、 java_lang_Class数组、 java_lang_Object及其数组、java_lang_String];
+    B --> C[设置 Sentinel对象 ];
+    C --> D[创建 Class Roots 并存储核心类，具体定义在 CLASS_ROOT_LIST宏中 ];
+    D --> E[创建所有原始类型Primitive及其数组的Class];
+    E --> F[创建 DexCache, dalvik.system.ClassExt 等基础设施类， 创建并设置resolution_method_ 、 imt_conflict_method_ 、 imt_unimplemented_method_];
+    F --> G[加载并注册 Boot Class Path 中的所有 Dex 文件到 boot_dex_files_];
+    G --> H[FindSystemClass 可用];
+    H --> HA[设置Trampoline函数];
+    HA --> I[重新check并完善（计算hash值）核心类];
+    I --> J[设置 Cloneable/Serializable];
+    J --> K[加载并设置其余所有关键系统类: 反射/引用/异常/ClassLoader等];
+    K --> L[调用 FinishInit 完成最后工作];
+    L --> M[End InitWithoutImage];
+
 ```
