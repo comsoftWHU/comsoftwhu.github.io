@@ -637,7 +637,7 @@ graph TD
       I --> J[加Locks::classlinker_classes_lock_锁并尝试插入ClassTable];
       J --> K{表中是否已有同名类 其他线程抢先?};
       K -- No --> L[插入新类];
-      L --> Z;
+      L --> Z[结束];
       K -- Yes --> M[丢弃当前结果, 使用已存在的类];
       M --> Z;
     end
@@ -674,7 +674,7 @@ graph TD
     H --> I{检查是否存在类循环依赖?};
     I -- Yes --> FAIL_CIRCULAR[抛出 ClassCircularityError];
     I -- No --> J{klass 是否出错?};
-    J -- Yes --> FAIL;
+    J -- Yes --> Z;
     J -- No --> G;
     
     subgraph "等待临时类被替换"
@@ -691,7 +691,6 @@ graph TD
     end
 
     FAIL_CIRCULAR --> Z[结束, 返回 null];
-    FAIL --> Z;
     SUCCESS --> Z_SUCCESS[结束];
 
 ```
