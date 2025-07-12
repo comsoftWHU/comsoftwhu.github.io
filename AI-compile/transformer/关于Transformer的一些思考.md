@@ -4,7 +4,7 @@ title: Transformer入门
 nav_order: 2
 parent: Transformer
 grand_parent: AI编译
-author: zeonfaiho
+author: junhuihe
 ---
 
 {% assign author = site.data.authors[page.author] %}
@@ -25,7 +25,7 @@ author: zeonfaiho
   });
 </script>
 
-# 关于Transformer的一些思考
+# Transformer笔记
 
 ## 模型结构
 

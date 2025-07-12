@@ -4,7 +4,7 @@ title: ALT阅读笔记
 nav_order: 2
 parent: data layout
 grand_parent: AI编译
-author: zeonfaiho
+author: junhuihe
 ---
 
 {% assign author = site.data.authors[page.author] %}
