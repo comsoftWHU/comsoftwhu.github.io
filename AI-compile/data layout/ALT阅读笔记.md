@@ -1,7 +1,6 @@
 ---
 layout: default
 title: ALT阅读笔记
-nav_order: 2
 parent: data layout
 grand_parent: AI编译
 author: junhuihe

@@ -1,7 +1,6 @@
 ---
 layout: default
 title: vDNN
-nav_order: 3
 parent: memory optimization
 grand_parent: AI编译
 author: DimancheH

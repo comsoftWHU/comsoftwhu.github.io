@@ -1,7 +1,6 @@
 ---
 layout: default
 title: TVM从入门到入土
-nav_order: 1
 parent: TVM
 grand_parent: AI编译
 author: yuxin

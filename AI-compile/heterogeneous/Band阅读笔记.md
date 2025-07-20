@@ -1,7 +1,6 @@
 ---
 layout: default
 title: Band阅读笔记
-nav_order: 2
 parent: 异构推理
 grand_parent: AI编译
 author: junhuihe

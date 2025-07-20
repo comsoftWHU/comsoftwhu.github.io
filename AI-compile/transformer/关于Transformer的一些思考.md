@@ -1,7 +1,6 @@
 ---
 layout: default
 title: Transformer入门
-nav_order: 2
 parent: Transformer
 grand_parent: AI编译
 author: junhuihe

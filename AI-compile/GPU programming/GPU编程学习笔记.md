@@ -1,7 +1,6 @@
 ---
 layout: default
 title: GPU编程学习笔记
-nav_order: 2
 parent: GPU programming
 grand_parent: AI编译
 author: junhuihe

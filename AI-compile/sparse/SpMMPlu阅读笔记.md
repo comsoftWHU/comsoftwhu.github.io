@@ -1,7 +1,6 @@
 ---
 layout: default
 title: SpMMPlu阅读笔记
-nav_order: 2
 parent: 稀疏张量
 grand_parent: AI编译
 author: junhuihe

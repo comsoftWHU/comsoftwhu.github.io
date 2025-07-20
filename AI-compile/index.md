@@ -1,7 +1,6 @@
 ---
 layout: default
 title: AI编译
-nav_order: 7
 has_children: true
 author: qingan
 ---

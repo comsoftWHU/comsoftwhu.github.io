@@ -1,7 +1,6 @@
 ---
 layout: default
 title: TensorIR阅读笔记
-nav_order: 2
 parent: TVM
 grand_parent: AI编译
 author: junhuihe
