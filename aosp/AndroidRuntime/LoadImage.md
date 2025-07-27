@@ -1,7 +1,7 @@
 ---
 layout: default
 title: BootImage
-nav_order: 1
+nav_order: 3
 parent: AndroidRuntime
 grand_parent: AOSP
 author: Anonymous Committer

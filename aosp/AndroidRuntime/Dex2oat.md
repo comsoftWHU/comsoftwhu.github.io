@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Dex2oat流程
-nav_order: 2
+nav_order: 5
 parent: AndroidRuntime
 grand_parent: AOSP
 author: Anonymous Committer

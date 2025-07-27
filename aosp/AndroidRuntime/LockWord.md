@@ -1,7 +1,7 @@
 ---
 layout: default
 title: 什么是LockWord
-nav_order: 1
+nav_order: 6
 parent: AndroidRuntime
 grand_parent: AOSP
 author: Anonymous Committer

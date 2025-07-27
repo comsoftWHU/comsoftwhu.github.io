@@ -1,7 +1,7 @@
 ---
 layout: default
 title: ClassLinker
-nav_order: 1
+nav_order: 4
 parent: AndroidRuntime
 grand_parent: AOSP
 author: Anonymous Committer

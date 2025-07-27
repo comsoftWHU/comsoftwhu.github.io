@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Dex文件和Class文件的区别
-nav_order: 1
+nav_order: 3
 parent: AndroidRuntime
 grand_parent: AOSP
 author: Anonymous Committer
