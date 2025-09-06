@@ -67,17 +67,21 @@ graph TD
 ### `CompileMethodQuick` (方法级决策中心)
 
 这是一个决策函数，根据方法的属性（JNI、抽象、被 `@NeverCompile` 注解）和编译器配置（如 PGO 信息），决定是否以及如何编译该方法。
-JNI 方法： 可能会复用启动镜像中的 JNI 桩，或通过 `JniCompile` 生成 JNI 机器码。
-抽象方法/ `@NeverCompile` 方法： 直接跳过编译。
-普通 Java 方法： 结合编译器过滤器和 Profile-Guided Optimization (PGO) 数据（如果可用），判断是否应该进行优化编译。如果决定编译，则会调用 `OptimizingCompiler::Compile`。
+
+- JNI 方法： 可能会复用启动镜像中的 JNI 桩，或通过 `JniCompile` 生成 JNI 机器码。
+
+- 抽象方法/ `@NeverCompile` 方法： 直接跳过编译。
+
+- 普通 Java 方法： 结合编译器过滤器和 Profile-Guided Optimization (PGO) 数据（如果可用），判断是否应该进行优化编译。如果决定编译，则会调用 `OptimizingCompiler::Compile`。
 
 ### `OptimizingCompiler::Compile` (核心优化编译流水线)
 
 这是真正将 Dalvik 字节码转换为高度优化机器码的入口。
-准备阶段： 创建 `DexCompilationUnit` 封装方法信息，并切换线程状态到 kNative 以避免阻塞 GC。
-Intrinsic 快速通道： 尝试将方法识别为 Intrinsic（例如 `System.arraycopy`），并使用预编译的、高性能的机器码，绕过复杂编译流程。
-TryCompile 常规通道： 如果不是 Intrinsic，则调用 TryCompile 启动完整的优化编译流水线。
-Emit 收尾： 将 `TryCompile` 生成的机器码、栈映射等信息打包成 `CompiledMethod` 对象，这是最终的编译产物，可写入 .oat 文件。
+
+- 准备阶段： 创建 `DexCompilationUnit` 封装方法信息，并切换线程状态到 kNative 以避免阻塞 GC。
+- Intrinsic 快速通道： 尝试将方法识别为 Intrinsic（例如 `System.arraycopy`），并使用预编译的、高性能的机器码，绕过复杂编译流程。
+- TryCompile 常规通道： 如果不是 Intrinsic，则调用 TryCompile 启动完整的优化编译流水线。
+- Emit 收尾： 将 `TryCompile` 生成的机器码、栈映射等信息打包成 `CompiledMethod` 对象，这是最终的编译产物，可写入 .oat 文件。
 
 ### `OptimizingCompiler::TryCompile` (HGraph核心优化)
 
