@@ -2,8 +2,7 @@
 layout: default
 title: Memmap数据结构
 nav_order: 6
-parent: AndroidRuntime
-grand_parent: AOSP
+parent: GC算法和实现
 author: Anonymous Committer
 ---
 

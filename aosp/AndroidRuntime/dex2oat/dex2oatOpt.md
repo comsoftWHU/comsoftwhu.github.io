@@ -1,9 +1,8 @@
 ---
 layout: default
-title: Dex2oat中的优化
+title: dex2oat编译中的优化
 nav_order: 5
-parent: AndroidRuntime
-grand_parent: AOSP
+parent: dex2oat
 author: Anonymous Committer
 ---
 ## OptimizingCompiler

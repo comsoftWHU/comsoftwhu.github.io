@@ -2,8 +2,7 @@
 layout: default
 title: UnstartedRuntime为dex2oat提供迷你运行时
 nav_order: 2
-parent: AndroidRuntime
-grand_parent: AOSP
+parent: dex2oat
 author: Anonymous Committer
 ---
 
