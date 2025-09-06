@@ -8,10 +8,47 @@ author: Anonymous Committer
 ---
 
 
-## TL;DR MarkCompact GC
+## TL;DR
+
+MarkCompact GC 流程图如下
 
 ```mermaid
+graph TD
+    A["Start: MarkCompact::RunPhases"] --> B["InitializePhase"];
+    B --> E["PreGcVerification"];
 
+    subgraph "Mutator Lock (Read)"
+    E["MarkingPhase"];
+    end
+
+    subgraph "ScopedPause"
+    E --> G["MarkingPause"];
+    end 
+
+    subgraph "Mutator Lock (Read)" 
+    G --> J["ReclaimPhase"];
+    J --> K["PrepareForCompaction: Determine if compaction needed"];
+    end
+
+    K --> M{"perform_compaction is true"};
+    M -- No --> N["Skip Compaction"];
+
+    M -- Yes --> O["ThreadFlipVisitor, FlipCallback"];
+    O --> P["FlipThreadRoots: Pause threads, flip roots"];
+
+    P --> Q{"IsValidFd(uffd_)"};
+    Q -- Yes --> S["Acquire Mutator Lock (Read)"];
+    subgraph "Mutator Lock (Read)" 
+    S["CompactionPhase (with userfaultfd)"];
+    end
+    S --> U["FinishPhase"];
+    Q -- No --> U;
+
+    N --> U;
+
+    U --> V["PostGcVerification"];
+    V --> W["Reset thread_running_gc_"];
+    W --> X[End];
 ```
 
 ## 具体的 MarkCompact GC 实现
@@ -20,48 +57,50 @@ author: Anonymous Committer
 
 ```cpp
 void MarkCompact::RunPhases() {
-  Thread* self = Thread::Current();
-  thread_running_gc_ = self;
-  Runtime* runtime = Runtime::Current();
-  InitializePhase();
-  GetHeap()->PreGcVerification(this);
+  Thread* self = Thread::Current(); // 获取当前线程
+  thread_running_gc_ = self; // 记录当前执行GC的线程
+  Runtime* runtime = Runtime::Current(); // 获取ART运行时实例
+
+  InitializePhase(); // 初始化GC阶段
+  GetHeap()->PreGcVerification(this); // 在GC前对堆进行验证
+
   {
-    ReaderMutexLock mu(self, *Locks::mutator_lock_);
-    MarkingPhase();
-  }
-  {
-    // Marking pause
-    ScopedPause pause(this);
-    MarkingPause();
-    if (kIsDebugBuild) {
-      bump_pointer_space_->AssertAllThreadLocalBuffersAreRevoked();
-    }
-  }
-  bool perform_compaction;
-  {
-    ReaderMutexLock mu(self, *Locks::mutator_lock_);
-    LOG(INFO) << "Reclaim phase starting";
-    ReclaimPhase();
-    perform_compaction = PrepareForCompaction();
+    ReaderMutexLock mu(self, *Locks::mutator_lock_); // 获取读锁，允许mutator线程运行
+    MarkingPhase(); // 执行标记阶段，标记所有可达对象
   }
 
-  if (perform_compaction) {
-    // Compaction pause
-    ThreadFlipVisitor visitor(this);
-    FlipCallback callback(this);
-    LOG(INFO) << "Flipping thread roots";
-    runtime->GetThreadList()->FlipThreadRoots(
+  {
+    // Marking pause // 标记暂停
+    ScopedPause pause(this); // 作用域暂停，暂停所有mutator线程
+    MarkingPause(); // 执行标记暂停阶段的额外操作
+    if (kIsDebugBuild) {
+      bump_pointer_space_->AssertAllThreadLocalBuffersAreRevoked(); // 调试模式下，断言所有线程本地缓冲区都已撤销
+    }
+  }
+
+  bool perform_compaction; // 是否执行压缩
+  {
+    ReaderMutexLock mu(self, *Locks::mutator_lock_); // 获取读锁，允许mutator线程运行
+    ReclaimPhase(); // 执行回收阶段，回收不可达对象
+    perform_compaction = PrepareForCompaction(); // 准备压缩，判断是否需要执行压缩
+  }
+
+  if (perform_compaction) { // 如果需要执行压缩
+    // Compaction pause // 压缩暂停
+    ThreadFlipVisitor visitor(this); // 创建线程翻转访问器
+    FlipCallback callback(this); // 创建翻转回调
+    runtime->GetThreadList()->FlipThreadRoots( // 翻转线程根，更新线程栈和寄存器中的对象引用
         &visitor, &callback, this, GetHeap()->GetGcPauseListener());
 
-    if (IsValidFd(uffd_)) {
-      ReaderMutexLock mu(self, *Locks::mutator_lock_);
-      LOG(INFO) << "Compaction phase starting with userfaultfd";
-      CompactionPhase();
+    if (IsValidFd(uffd_)) { // 如果用户态文件描述符（userfaultfd）有效
+      ReaderMutexLock mu(self, *Locks::mutator_lock_); // 获取读锁，允许mutator线程运行
+      CompactionPhase(); // 执行压缩阶段，移动对象以消除碎片
     }
   }
-  FinishPhase();
-  GetHeap()->PostGcVerification(this);
-  thread_running_gc_ = nullptr;
+
+  FinishPhase(); // 完成GC阶段
+  GetHeap()->PostGcVerification(this); // 在GC后对堆进行验证
+  thread_running_gc_ = nullptr; // 清除GC线程记录
 }
 ```
 
@@ -246,6 +285,7 @@ void ThreadList::FlipThreadRoots(Closure* thread_flip_visitor,
 `compacting_ = true;`: 设置一个全局标志位，通知系统的其他部分（尤其是 `userfaultfd` 信号处理器），整理阶段正式开始。
 
 ###### 2. 更新Immune Spaces
+
 `Immune Spaces`是指那些自身不参与 GC 的特殊内存区域，例如 `Zygote` 空间和 `Boot Image` 空间。
 
 为什么需要更新？：虽然这些空间本身不被回收，但它们内部的对象可能引用了普通堆（`Moving Space`）中的对象。当普通堆中的对象被移动后，这些引用就需要被更新。
@@ -253,6 +293,7 @@ void ThreadList::FlipThreadRoots(Closure* thread_flip_visitor,
 如何高效更新？：通过**卡片表（Card Table）**或 **Mod-Union Table**。这些数据结构记录了免疫空间中哪些“卡片”（小的内存块）被“弄脏”（即被写入过）。GC 只需扫描这些被标记为“脏”的卡片，而不需要扫描整个巨大的免疫空间，从而极大地提高了效率。
 
 ###### 3. 全面根引用更新与特殊空间处理
+
 这是暂停期间最繁重的工作：更新虚拟机中所有的根引用（GC Roots）。
 
 `runtime->VisitConcurrentRoots(...)`, `runtime->VisitNonThreadRoots(...)`, `linker->VisitClassLoaders(...)` 等：这些调用会地毯式地扫描所有类型的根，包括 JNI 全局引用、类的静态字段、活动的类加载器等，并将其中所有指向旧地址的指针，全部更新为指向新地址。
@@ -268,6 +309,7 @@ void ThreadList::FlipThreadRoots(Closure* thread_flip_visitor,
 `KernelPreparation()`: 准备内核。这是为并发整理做准备的关键一步，它很可能会在这里通过 `ioctl` 调用来设置 `userfaultfd`，将需要并发整理的内存区域“注册”给内核。
 
 ###### 4. 准备并发或执行后备方案
+
 `UpdateNonMovingSpace()`: 更新非移动空间中的对象引用。
 
 后备模式 (`if (uffd_ == kFallbackMode)`): 如果 userfaultfd 不可用或初始化失败，GC 会放弃并发，进入“后备模式”。此时，它会调用 `CompactMovingSpace<kFallbackMode>`，在本次 STW 暂停内，直接完成所有对象的移动和整理工作。这会导致一次较长的 GC 暂停。
@@ -390,8 +432,8 @@ void MarkCompact::CompactionPause() {
 }
 ```
 
-
 #### CompactionPhase
+
 可以把`CompactionPhase`的工作流程看作以下几个步骤：
 
 1. 记录统计信息
