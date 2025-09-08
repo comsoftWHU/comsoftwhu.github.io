@@ -112,33 +112,522 @@ void MarkCompact::RunPhases() {
 * **设定边界**：记录当前堆的末尾位置，标记暂停后分配的对象都将被视为“黑色”（默认存活）。
 * **计算地址偏移**：计算出 `moving_space`（当前堆）和 `from_space`（用于整理的临时源空间）之间的地址差 `from_space_slide_diff_`。
 
+```cpp
+void MarkCompact::InitializePhase() {
+  // 计时：记录本函数（初始化阶段）的耗时，便于 GC 性能分析
+  TimingLogger::ScopedTiming t(__FUNCTION__, GetTimings());
+
+  // 1) 获取标记栈，并确保在初始化开始时为空
+  mark_stack_ = heap_->GetMarkStack();
+  CHECK(mark_stack_->IsEmpty());
+
+  // 2) 重置免疫空间信息（本轮 GC 不会移动/回收的空间集合，稍后会重新构建）
+  immune_spaces_.Reset();
+
+  // 3) 清零各种统计数据/计数器
+  moving_first_objs_count_ = 0;     // 移动分区内“段首对象”数量（用于压缩/滑移边界计算的统计）
+  non_moving_first_objs_count_ = 0; // 非移动分区内“段首对象”数量
+  black_page_count_ = 0;            // 被标记为“黑页”的页数量（实现相关的统计/优化）
+  bytes_scanned_ = 0;               // 已扫描的对象总字节数
+  freed_objects_ = 0;               // 已释放对象数（清扫/整理阶段统计）
+
+  // 4) 压缩缓冲计数器初始化：第一个 buffer（索引 0）预留给 GC 线程，
+  //    因此这里从 1 开始。使用 relaxed 原子操作，仅需原子性，无需顺序性。
+  compaction_buffer_counter_.store(1, std::memory_order_relaxed);
+
+  // 5) 记录“黑色分配”的起点：从当前 bump-pointer 空间的 Limit 开始的新分配直接置黑
+  // Limit() 返回的是当前空间的 分配上界（下一个对象分配的起始位置）。
+  black_allocations_begin_ = bump_pointer_space_->Limit();
+
+  // 6) 校验移动空间起点一致性：moving_space_begin_ 应等于 bump-pointer 空间的 Begin
+  DCHECK_EQ(moving_space_begin_, bump_pointer_space_->Begin());
+
+  // 7) 计算 from-space 到 moving-space 的“滑移偏移量”，
+  //    用于压缩时把旧地址映射到新地址（slide/compaction）
+  from_space_slide_diff_ = from_space_begin_ - moving_space_begin_;
+
+  // 8) 记录本轮移动空间的当前结束边界（Limit 可能随分配/整理变化）
+  moving_space_end_ = bump_pointer_space_->Limit();
+
+  // 9) 如之前记录的黑密集区终点超出起点，说明位图可能留有旧的活性标记；
+  //    为确保干净起步，清空移动空间位图，并复位黑密集区终点。
+  if (black_dense_end_ > moving_space_begin_) {
+    moving_space_bitmap_->Clear();
+  }
+  black_dense_end_ = moving_space_begin_;
+
+  // 10) 读取镜像的指针大小（32/64 位），后续对象头/偏移/屏障等操作要用
+  pointer_size_ = Runtime::Current()->GetClassLinker()->GetImagePointerSize();
+}
+```
+
 ### Phase 2: `MarkingPhase` - 并发标记阶段
 
-这是 GC 的核心工作之一，大部分时间与应用程序**并发执行**。
+`MarkingPhase`目标：找出所有“存活对象”，并在标记位图/结构中记录下来，为后续 计算新地址（计算滑移/压缩后的目标地址） 和 对象复制/滑移 做准备。
 
-* `PrepareCardTableForMarking`: 准备卡表（Card Table），用于记录并发期间被应用修改过的内存区域（“脏卡”）。
-* `MarkRoots`: 短暂暂停（STW），从根（线程栈、全局变量等）开始标记。
-* `MarkReachableObjects`: 从根出发，遍历整个对象图，标记所有存活对象。这是最耗时的部分。
-* `PreCleanCards`: **关键优化**。在并发标记的同时，GC 线程会反复扫描并处理脏卡，这能极大减少最终暂停所需处理的工作量，从而缩短暂停时间。
+并发标记阶段目标：在应用线程继续运行的同时，尽量完成大部分可达性传播与标记，减少最终 STW 的工作量。
+
+关键点：
+
+1. 根集初标记(可能在短暂停顿后开始): 调用 `MarkRoots(kVisitRootFlagAllRoots | kVisitRootFlagStartLoggingNewRoots`)把当下的线程栈、JNI、Class、静态字段、intern 表等根对象置灰/置黑并入标记栈。从这之后开始记录新增根（`StartLoggingNewRoots`），以便最终 STW 回补。
+
+2. 设置黑色分配边界: 记录 `black_allocations_begin_ = bump_pointer_space_->Limit()`；并发期内新分配对象直接视为黑色，保持三色不变式、避免漏标。
+
+3. 堆扫描与传播: `MarkReachableObjects()`：多个 GC worker 并发 drain mark_stack_；`AtomicTestAndSet` 位图去重；`ScanObject` 遍历对象引用字段；`image`/`zygote`对象不移动，通常不入栈或视为已存活。
+
+4. 卡表/脏卡预清（preclean）: `PrepareCardTableForMarking(true)`：清理/准备卡表；并发期 mutator 写入会把卡标脏；GC 周期性 `PreCleanCards()`：只要不 STW，就尽量把当前“已知脏卡”里指向的新引用补标，把增量工作抢先做掉，降低最终停顿工作量。由于本实现“没有写/读屏障”，并发期仍然可能遗漏新写入带来的可达性，需要最后 STW 兜底。
+
+5. 特殊空间: `MarkZygoteLargeObjects()` / `MarkLargeObjects()`：LOS 通常只标不动；`Non-moving space`：只标记不重定位。
+
+6. 引用处理的并发准备: `ReferenceProcessor::Setup(..., concurrent=true, clear_soft_refs)`：并发期先建好引用处理管线；若本轮不清理软引用，提前 `ForwardSoftReferences()`，把尽可能多的 `SoftReference` 直接转发到强可达，减轻暂停期开销。
+
+简单说：并发期做“能做的都先做”，尤其是遍历闭包和脏卡预清，但因为没有写/读屏障，最后仍需 STW 把并发期发生的新写入补齐。
+
+```cpp
+void MarkCompact::MarkingPhase() {
+  // 计时：记录 MarkingPhase 阶段的时间，用于性能分析
+  TimingLogger::ScopedTiming t(__FUNCTION__, GetTimings());
+
+  // 确保当前线程是正在执行垃圾回收的线程
+  DCHECK_EQ(thread_running_gc_, Thread::Current());
+
+  // 锁定堆位图，确保在标记阶段堆的结构不被修改
+  WriterMutexLock mu(thread_running_gc_, *Locks::heap_bitmap_lock_);
+
+  // 调整 GC 结构，确保它们适合当前的标记阶段
+  MaybeClampGcStructures();
+
+  // 准备卡表，为标记阶段清除脏卡
+  PrepareCardTableForMarking(/*clear_alloc_space_cards*/ true);
+
+  // 标记 Zygote（预先创建的共享对象）中的大对象
+  MarkZygoteLargeObjects();
+
+  // 标记根对象（线程栈、JNI 引用、静态字段等）
+  MarkRoots(
+        static_cast<VisitRootFlags>(kVisitRootFlagAllRoots | kVisitRootFlagStartLoggingNewRoots));
+
+  // 标记所有可达对象
+  MarkReachableObjects();
+
+  // 在暂停之前，先清理已脏的卡，以减少暂停时间
+  PreCleanCards();
+
+  // 设置引用处理，并在启用慢路径（MarkingPause）之前先处理软引用
+  ReferenceProcessor* rp = GetHeap()->GetReferenceProcessor();
+  bool clear_soft_references = GetCurrentIteration()->GetClearSoftReferences();
+
+  // 配置引用处理器
+  rp->Setup(thread_running_gc_, this, /*concurrent=*/ true, clear_soft_references);
+
+  // 如果不需要清理软引用，尝试转发软引用
+  if (!clear_soft_references) {
+    rp->ForwardSoftReferences(GetTimings());
+  }
+}
+```
+
+`MaybeClampGcStructures`主要作用是根据当前的 `bump-pointer` 空间大小调整 GC 数据结构（如 `from_space_map_`、`live_words_bitmap_`、`info_map_` 等）以确保它们的大小适配当前分配的内存区域
+
+```cpp
+void MarkCompact::MaybeClampGcStructures() {
+  // 获取 bump-pointer 空间的容量（分配空间的大小）
+  size_t moving_space_size = bump_pointer_space_->Capacity();
+  
+  // 确保正在运行垃圾回收的线程有效
+  DCHECK(thread_running_gc_ != nullptr);
+  
+  // 如果 "clamping" 操作还没有完成，执行数据结构的大小调整
+  if (UNLIKELY(clamp_info_map_status_ == ClampInfoStatus::kClampInfoPending)) {
+    
+    // 检查 from_space_map_ 是否有效，并调整其大小
+    CHECK(from_space_map_.IsValid());
+    if (from_space_map_.Size() > moving_space_size) {
+      from_space_map_.SetSize(moving_space_size);  // 确保 from_space_map_ 不会超过分配空间大小
+    }
+    
+    // 调整活动字节位图（live_words_bitmap_）的大小
+    live_words_bitmap_->SetBitmapSize(moving_space_size);
+    
+    // 初始化信息映射表，并根据分配空间大小设置其大小
+    size_t set_size = InitializeInfoMap(info_map_.Begin(), moving_space_size);
+    CHECK_LT(set_size, info_map_.Size());  // 确保初始化后的大小不超过原始大小
+    info_map_.SetSize(set_size);  // 更新 info_map_ 的大小
+
+    // 完成 "clamping" 操作
+    clamp_info_map_status_ = ClampInfoStatus::kClampInfoFinished;
+  }
+}
+```
 
 ### Phase 3: `MarkingPause` - 标记暂停阶段
 
-一个**短暂的 STW 暂停**，用于确保标记的最终一致性。
+目标：在停止所有 mutator 后，做一次确定性的补标记，把并发期的竞态更新（新根、新写入、TLA/分配缓冲尾部等）全部补齐，保证闭包完备；同时切换到“慢路径”以安全处理 `Reference` 家族。
 
-* **同步状态**：暂停所有应用线程，并最后一次扫描它们的根。
-* **处理脏卡**：`RecursiveMarkDirtyObjects`，处理在 `PreCleanCards` 之后新产生的脏卡。
-* **处理特殊引用**：`GetHeap()->GetReferenceProcessor()->EnableSlowPath()`，为处理 `WeakReference`、`SoftReference` 等做准备。
-* **最终确定存活集**：此时，所有存活对象都已被准确标记。
+整个流程如下
+
+```mermaid
+flowchart TD
+    A["进入MarkingPause (STW)"] --> B["获取锁: mutator锁 + heap_bitmap锁"]
+    B --> C["遍历线程列表"]
+    C --> C1["标记线程根"]
+    C1 --> C2["撤销ThreadLocal分配栈/缓冲"]
+    C2 --> D["结算并发期分配数"]
+
+    D --> E["设置黑色分配边界 (页对齐)"]
+    E --> F["重新标记非线程根"]
+    F --> G["扫描脏卡对象 (补标)"]
+    G --> H["交换Live/Mark栈 冻结活对象集"]
+
+    H --> I["禁止新增system weaks"]
+    I --> J["启用Reference处理慢路径"]
+    J --> K["标记完成 marking_done = true"]
+```
+
+```cpp
+void MarkCompact::MarkingPause() {
+  // 计时：记录（暂停态）MarkingPause 的耗时
+  TimingLogger::ScopedTiming t("(Paused)MarkingPause", GetTimings());
+
+  Runtime* runtime = Runtime::Current();
+
+  // 断言当前持有 Mutator 锁的独占权（Stop-The-World 已生效）
+  Locks::mutator_lock_->AssertExclusiveHeld(thread_running_gc_);
+
+  {
+    // 并发 GC 的场景下，此处需要集中处理“并发期产生的脏对象/结构”
+    // 抓堆位图写锁，保证标记位图/栈等结构更新原子一致
+    WriterMutexLock mu(thread_running_gc_, *Locks::heap_bitmap_lock_);
+
+    {
+      // 与关机/线程表相关的锁，保护线程列表和线程状态遍历
+      MutexLock mu2(thread_running_gc_, *Locks::runtime_shutdown_lock_);
+      MutexLock mu3(thread_running_gc_, *Locks::thread_list_lock_);
+
+      // 拿到当前所有线程列表
+      std::list<Thread*> thread_list = runtime->GetThreadList()->GetList();
+      for (Thread* thread : thread_list) {
+        // 补标线程本地根（如栈上的本地引用等），flags=0 表示默认遍历
+        thread->VisitRoots(this, static_cast<VisitRootFlags>(0));
+
+        // 线程本地 GC buffer 应为空（避免并发期仍持有未处理的本地缓存）
+        DCHECK_EQ(thread->GetThreadLocalGcBuffer(), nullptr);
+
+        // 撤销线程本地分配栈，避免下面交换分配/存活栈时
+        // 仍有线程把对象分配进“活栈”
+        thread->RevokeThreadLocalAllocationStack();
+
+        // 撤销 bump-pointer 空间上的线程本地分配缓冲（TLAB）
+        bump_pointer_space_->RevokeThreadLocalBuffers(thread);
+      }
+    }
+
+    // 仅抓取“累计分配的对象数”，在上面撤销 TLAB 之后这个计数是可靠的
+    freed_objects_ += bump_pointer_space_->GetAccumulatedObjectsAllocated();
+
+    // 记录此刻 moving-space 的“末端”为黑色分配起点。
+    // 之后一切新分配对象都视作黑色，避免再次标记/扫描。
+    // 同时按页对齐，便于后续基于卡表的 ClearCardRange 等操作。
+    black_allocations_begin_ =
+        bump_pointer_space_->AlignEnd(thread_running_gc_, gPageSize, heap_);
+    DCHECK_ALIGNED_PARAM(black_allocations_begin_, gPageSize);
+
+    // 重新标记根集合（不含线程根，线程根刚才已处理）
+    ReMarkRoots(runtime);
+
+    // 扫描脏对象：把并发期以来所有“脏卡”涉及的引用出边强制补标。
+    // paused=true 表示当前处于 STW 阶段；kCardDirty 仅处理已标脏的卡页。
+    RecursiveMarkDirtyObjects(/*paused*/ true, accounting::CardTable::kCardDirty);
+
+    {
+      // 交换 live/mark 栈，冻结本轮活对象集的快照大小
+      TimingLogger::ScopedTiming t2("SwapStacks", GetTimings());
+      heap_->SwapStacks();
+      live_stack_freeze_size_ = heap_->GetLiveStack()->Size();
+    }
+  }
+
+  // TODO（注释解释）：PreSweeping 验证在“bump-pointer + mark-bitmap + 黑色分配”并存时
+  // 需要既能按位图走对象，又能覆盖黑色分配（未在位图里），这在锁切换窗口中
+  // 容易出现遗漏或多访，暂不启用。
+  // heap_->PreSweepingGcVerification(this);
+
+  // 禁止新增 system-weak，避免在 sweep 前新加的弱引用未被标记而被误扫；
+  // 也避免字符串驻留（intern）返回即将被回收的强引用。
+  runtime->DisallowNewSystemWeaks();
+
+  // 引用处理进入慢路径（禁用 fast-path），必须在 mutator 暂停下切换，
+  // 因为 GetReferent 的 fast-path 没有加锁。
+  heap_->GetReferenceProcessor()->EnableSlowPath();
+
+  // 标记阶段到此彻底完成
+  marking_done_ = true;
+}
+```
 
 ### Phase 4: `ReclaimPhase` & `PrepareForCompaction` - 回收与整理准备阶段
 
-* `ReclaimPhase`:
-  * **回收非移动空间**：对大对象空间（LOS）和非移动空间（Non-moving space）执行传统的标记-清除（Mark-Sweep）。
-  * **处理引用队列**：处理 `WeakReference` 等，将可回收的引用放入队列。
-* `PrepareForCompaction`:
-  * **计算存活密度**：分析 `moving_space` 中对象的存活密度。如果某块区域的对象存活率非常高（例如超过95%），则将其标记为**黑色密集区 (`black_dense_end_`)**。这部分区域的对象将**不被移动\*\*，只更新其内部指针。
-  * **计算新地址**：这是最关键的一步。通过 `live_words_bitmap_` 和 `chunk_info_vec_`，对存活字节进行一次**前缀和（`std::exclusive_scan`）计算**。完成后，`chunk_info_vec_` 就成了一张“地址映射表”，可以通过任何一个对象的旧地址，瞬间计算出它的新地址。
-  * **计算滑动距离**：计算出黑色对象（新分配的对象）需要整体滑动的距离 `black_objs_slide_diff_`。
+#### `ReclaimPhase`
+
+* **回收非移动空间**：对大对象空间（LOS）和非移动空间（Non-moving space）执行传统的标记-清除（Mark-Sweep）。
+* **处理引用队列**：处理 `WeakReference` 等，将可回收的引用放入队列。
+
+```cpp
+void MarkCompact::ReclaimPhase() {
+  // 计时：记录 ReclaimPhase 阶段的耗时
+  TimingLogger::ScopedTiming t(__FUNCTION__, GetTimings());
+
+  // 确认当前运行 GC 的线程就是调用线程
+  DCHECK(thread_running_gc_ == Thread::Current());
+
+  Runtime* const runtime = Runtime::Current();
+
+  // 1) 并发处理引用对象（软引用、弱引用、虚引用、finalizer 引用等）
+  //    这里会按照 GC 策略决定哪些引用对象可达、哪些要清理/入队
+  ProcessReferences(thread_running_gc_);
+
+  // 2) 清扫系统弱引用（system weaks），这里是并发执行（paused = false）
+  //    TODO 注释说明：将来可能和压缩暂停阶段的引用更新合并，减少一次扫描
+  SweepSystemWeaks(thread_running_gc_, runtime, /*paused*/ false);
+
+  // 3) 允许新的 system weaks 被注册
+  //    （之前在 MarkingPause 阶段调用过 DisallowNewSystemWeaks()）
+  runtime->AllowNewSystemWeaks();
+
+  // 4) 在 system weaks 被清扫之后清理类加载器
+  //    因为是否有类卸载发生，是通过 system weaks 的清扫结果来判断的
+  runtime->GetClassLinker()->CleanupClassLoaders();
+
+  {
+    // 抓堆位图写锁，保证后续 Sweep 和位图操作的并发安全
+    WriterMutexLock mu(thread_running_gc_, *Locks::heap_bitmap_lock_);
+
+    // 5) 回收未被标记的对象（白对象），释放内存
+    Sweep(false);
+
+    // 6) 交换各空间的 live/mark 位图
+    //    优化：这样在 Sweep 中不用显式清 live bits，
+    //    只需要在这里交换位图即可（避免逐个清位，提升效率）
+    //    注意：只交换未绑定的位图
+    SwapBitmaps();
+
+    // 7) 解除堆空间和位图之间的绑定关系
+    //    便于下一个 GC 周期重新初始化
+    GetHeap()->UnBindBitmaps();
+  }
+}
+```
+
+#### `PrepareForCompaction`
+
+* **计算存活密度**：分析 `moving_space` 中对象的存活密度。如果某块区域的对象存活率非常高（例如超过95%），则将其标记为**黑色密集区 (`black_dense_end_`)**。这部分区域的对象将**不被移动\*\*，只更新其内部指针。
+* **计算新地址**：这是最关键的一步。通过 `live_words_bitmap_` 和 `chunk_info_vec_`，对存活字节进行一次**前缀和（`std::exclusive_scan`）计算**。完成后，`chunk_info_vec_` 就成了一张“地址映射表”，可以通过任何一个对象的旧地址，瞬间计算出它的新地址。
+* **计算滑动距离**：计算出黑色对象（新分配的对象）需要整体滑动的距离 `black_objs_slide_diff_`。
+
+```cpp
+bool MarkCompact::PrepareForCompaction() {
+  // 计时：记录压缩准备阶段的耗时
+  TimingLogger::ScopedTiming t(__FUNCTION__, GetTimings());
+
+  // 每页包含多少个“chunk”（按 kOffsetChunkSize 切分）
+  size_t chunk_info_per_page = gPageSize / kOffsetChunkSize;
+
+  // 参与压缩的区间长度（以 chunk 为单位）：从移动空间起点到黑色分配边界
+  // black_allocations_begin_ 之后是“黑色分配”，本轮不参与（只做滑移差）
+  size_t vector_len = (black_allocations_begin_ - moving_space_begin_) / kOffsetChunkSize;
+
+  // 运行时检查：长度不得超过预分配的向量容量
+  DCHECK_LE(vector_len, vector_length_);
+  // 运行时检查：chunk 向量容量按“每页 chunk 数”对齐
+  DCHECK_ALIGNED_PARAM(vector_length_, chunk_info_per_page);
+
+  // 如果参与压缩的区间为 0，直接返回（无需压缩）
+  if (UNLIKELY(vector_len == 0)) {
+    // Nothing to compact.
+    return false;
+  }
+
+  // 校验预填充的 live-bytes 统计：chunk_info_vec_[i] 必须等于位图统计的 live bytes
+  for (size_t i = 0; i < vector_len; i++) {
+    DCHECK_LE(chunk_info_vec_[i], kOffsetChunkSize);
+    DCHECK_EQ(chunk_info_vec_[i], live_words_bitmap_->LiveBytesInBitmapWord(i));
+  }
+
+  // ----------------------------------------------------------------------------
+  // 说明：
+  // 此处的 chunk_info_vec_ 初始装的是“每个 chunk 的活字节数”，
+  // 稍后会把它原地转换为“前缀和”（old->new 地址映射用），即每个位置表示
+  // “到该 chunk 为止累计的活字节数”（exclusive_scan）。
+  //
+  // 同时，这里引入“黑密集区（black-dense region）”的概念：
+  // 通过统计页粒度的活字节占比，找到“前段足够致密”的区域（活性很高），
+  // 可以选择对其“就地更新引用、不移动对象”，以减少更新量（可选优化）。
+  // ----------------------------------------------------------------------------
+
+  size_t black_dense_idx = 0;  // 黑密集区终止的 chunk 索引（开区间下标）
+  GcCause gc_cause = GetCurrentIteration()->GetGcCause();
+
+  // 在某些触发场景下（非显式 GC、非收集器切换，且不清软引用）才尝试黑密集优化
+  if (gc_cause != kGcCauseExplicit && gc_cause != kGcCauseCollectorTransition &&
+      !GetCurrentIteration()->GetClearSoftReferences()) {
+
+    uint64_t live_bytes = 0, total_bytes = 0;
+    // 将 vector_len 向上对齐到整页的 chunk 数，便于页粒度统计
+    size_t aligned_vec_len = RoundUp(vector_len, chunk_info_per_page);
+    size_t num_pages = aligned_vec_len / chunk_info_per_page;
+    size_t threshold_passing_marker = 0;  // 记录“到目前为止达到密度阈值”的页数
+
+    std::vector<uint32_t> pages_live_bytes;
+    pages_live_bytes.reserve(num_pages);
+
+    // 逐页累加活字节，寻找“从起始页向后累计达到阈值”的最大前缀
+    // kBlackDenseRegionThreshold（百分比阈值）用于判断“足够致密”
+    for (size_t i = 0; i < aligned_vec_len; i += chunk_info_per_page) {
+      uint32_t page_live_bytes = 0;
+      for (size_t j = 0; j < chunk_info_per_page; j++) {
+        page_live_bytes += chunk_info_vec_[i + j];
+        total_bytes += kOffsetChunkSize;
+      }
+      live_bytes += page_live_bytes;
+      pages_live_bytes.push_back(page_live_bytes);
+
+      // 从起点到当前位置的累计活字节比例是否超过阈值
+      if (live_bytes * 100U >= total_bytes * kBlackDenseRegionThreshold) {
+        threshold_passing_marker = pages_live_bytes.size();
+      }
+    }
+    DCHECK_EQ(pages_live_bytes.size(), num_pages);
+
+    // 去除尾部“不达标”的页：从尾端回溯，找到最后一个达标的页
+    if (threshold_passing_marker > 0) {
+      auto iter = std::find_if(
+          pages_live_bytes.rbegin() + (num_pages - threshold_passing_marker),
+          pages_live_bytes.rend(),
+          [](uint32_t bytes) {
+            return bytes * 100U >= gPageSize * kBlackDenseRegionThreshold;
+          });
+      // 计算黑密集区结束的 chunk 下标（页 * 每页chunk数）
+      black_dense_idx = (pages_live_bytes.rend() - iter) * chunk_info_per_page;
+    }
+
+    // 将“黑密集区结束地址”落到 moving space 线上，并按页对齐
+    black_dense_end_ = moving_space_begin_ + black_dense_idx * kOffsetChunkSize;
+    DCHECK_ALIGNED_PARAM(black_dense_end_, gPageSize);
+
+    // 处理特殊情况：某些 Class 对象在 black_dense_end_ 之后分配，
+    // 但其实例在此前页面开始。因为黑密集区内会“就地更新引用”，
+    // 若类元数据已更新而实例扫描时读取到了“错的类信息（如 ref 位图）”，会出错。
+    // 因此把 black_dense_end_ 往前（向低地址）收缩到安全边界（类对象最早地址），再页对齐。
+    for (auto iter = class_after_obj_map_.rbegin();
+         iter != class_after_obj_map_.rend() &&
+         reinterpret_cast<uint8_t*>(iter->first.AsMirrorPtr()) >= black_dense_end_;
+         iter++) {
+      black_dense_end_ =
+          std::min(black_dense_end_, reinterpret_cast<uint8_t*>(iter->second.AsMirrorPtr()));
+      black_dense_end_ = AlignDown(black_dense_end_, gPageSize);
+    }
+
+    // 重新计算黑密集区结束的 chunk 下标，并确保不越界
+    black_dense_idx = (black_dense_end_ - moving_space_begin_) / kOffsetChunkSize;
+    DCHECK_LE(black_dense_idx, vector_len);
+
+    // 若黑密集区覆盖了整个待压缩区间，则无需压缩
+    if (black_dense_idx == vector_len) {
+      // There is nothing to compact.
+      return false;
+    }
+
+    // 初始化“黑密集区内的不移动首对象”索引（用于就地更新引用）
+    InitNonMovingFirstObjects(reinterpret_cast<uintptr_t>(moving_space_begin_),
+                              reinterpret_cast<uintptr_t>(black_dense_end_),
+                              moving_space_bitmap_,
+                              first_objs_moving_space_);
+  }
+
+  // 初始化“moving space 中、从黑密集区之后开始”的 page 首对象索引
+  // （参与移动/压缩的那一段）
+  InitMovingSpaceFirstObjects(vector_len, black_dense_idx / chunk_info_per_page);
+
+  // 初始化 Non-moving space 的 page 首对象索引（非移动区只更新引用，不搬移）
+  non_moving_first_objs_count_ =
+      InitNonMovingFirstObjects(reinterpret_cast<uintptr_t>(non_moving_space_->Begin()),
+                                reinterpret_cast<uintptr_t>(non_moving_space_->End()),
+                                non_moving_space_->GetLiveBitmap(),
+                                first_objs_non_moving_space_);
+
+  // ===============================================================
+  // 将 chunk_info_vec_ 从“逐 chunk 的活字节统计”转换为“前缀和”：
+  // old->new 地址 = 区间起点 + 该 chunk 的前缀活字节
+  //
+  // 特殊：需要把向量“多更新一个元素”（heap usage 之后的一个位置），
+  // 用于“黑色分配对象”的压缩后地址计算（post-compact address）
+  // ===============================================================
+
+  uint32_t total_bytes;
+  if (vector_len < vector_length_) {
+    // 还有空间：把 vector_len 往后扩 1 个位置，作为“one-past-end”承载位
+    vector_len++;
+    total_bytes = 0;
+  } else {
+    // 没有额外空间：把末尾值先取出来（exclusive_scan 会覆盖）
+    total_bytes = chunk_info_vec_[vector_len - 1];
+  }
+
+  // 对 [black_dense_idx, vector_len) 做“前缀和（排他）”
+  // 起始偏移量 = black_dense_idx * kOffsetChunkSize
+  std::exclusive_scan(chunk_info_vec_ + black_dense_idx,
+                      chunk_info_vec_ + vector_len,
+                      chunk_info_vec_ + black_dense_idx,
+                      black_dense_idx * kOffsetChunkSize);
+
+  // total_bytes = 最后一个位置的累计值（即“活字节总量”，若上面取过末尾值则加上）
+  total_bytes += chunk_info_vec_[vector_len - 1];
+
+  // 压缩后的移动空间“逻辑末尾”（按页对齐）
+  post_compact_end_ = AlignUp(moving_space_begin_ + total_bytes, gPageSize);
+
+  // 校验：压缩后末尾应等于“moving_first_objs_count_ * 页大小”后的起点
+  CHECK_EQ(post_compact_end_, moving_space_begin_ + moving_first_objs_count_ * gPageSize)
+      << "moving_first_objs_count_:" << moving_first_objs_count_
+      << " black_dense_idx:" << black_dense_idx << " vector_len:" << vector_len
+      << " total_bytes:" << total_bytes
+      << " black_dense_end:" << reinterpret_cast<void*>(black_dense_end_)
+      << " chunk_info_per_page:" << chunk_info_per_page;
+
+  // 黑对象段的“滑移差”：黑色分配起点相对压缩后末端的偏移
+  // （黑段整体只需统一平移，不参与前缀和）
+  black_objs_slide_diff_ = black_allocations_begin_ - post_compact_end_;
+
+  // 压缩后不应比压缩前占用更多空间
+  CHECK_GE(black_objs_slide_diff_, 0);
+
+  // 若滑移差为 0：说明“黑段”紧贴压缩后末端，实际上无需再做移动
+  if (black_objs_slide_diff_ == 0) {
+    black_dense_end_ = black_allocations_begin_;
+    return false;
+  }
+
+  // 余下未使用的 chunk_info 位置应为 0（一致性检查）
+  for (size_t i = vector_len; i < vector_length_; i++) {
+    DCHECK_EQ(chunk_info_vec_[i], 0u);
+  }
+
+  // ------------------------------------------------------------------
+  // 重要说明（TLAB 洞的处理）：
+  // 标记暂停之后的分配都算作“黑色”，且它们并不保证连续（各线程 TLAB 分配）。
+  // 因此：压缩只做“至暂停前”的那段；暂停后的那段做“带洞的滑移”，
+  // 再在预压缩暂停中修正 TLS 里的 TLAB 信息。
+  // 对应地，post-marking-pause 的 chunk-info 也会在预压缩暂停中补齐。
+  // ------------------------------------------------------------------
+
+  // 用户态缺页处理（userfaultfd）：若未初始化，则此处创建，
+  // 用于后续并行搬移时的按页拷贝/保护（若启用该策略）
+  if (!uffd_initialized_) {
+    CreateUserfaultfd(/*post_fork=*/false);
+  }
+  return true;
+}
+```
 
 ### Phase 5: `FlipThreadRoots` & `CompactionPhase` - 整理暂停与并发整理
 
