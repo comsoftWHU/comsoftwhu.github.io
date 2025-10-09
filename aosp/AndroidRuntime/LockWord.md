@@ -80,11 +80,33 @@ LockWord的官方注释如下
 | 31 30 | 29 m| 28 r| 27 ...... 12  | 11 ........ 0 |
    ▲       ▲     ▲         ▲                 ▲
    │       │     │         │                 │
-   │       │     │         │                 └— 低 12 位 存放thread id owner或者其他低位部分
-   │       │     │         └— 用于不同状态下存放 lock count 或 HashCode MonitorId ForwardingAddress的高位部分
+   │       │     │         │                 └— 低 12 位 存放thread id owner或者 HashCode、MonitorId 低位部分
+   │       │     │         └— 用于不同状态下存放 lock count 或 HashCode、MonitorId 高位部分
    │       │     └— `r`：一个比特，用于 ReadBarrier 状态（读屏障 GC 标志）
    │       └— `m`：一个比特，用于 MarkBit 状态（标记位，用于 GC） 
    └— 最高两位（bit 31-30）：表示当前 lock word 的“状态类型”（共 4 种状态）
+当最高两位为00时代表thin lock
+当最高两位为01时代表fat lock
+当最高两位为10时代表hashcode
+当最高两位为11，剩下的bit表示转发地址（右移了kObjectAlignmentShift）
+```
+
+类似的我们可以设计一个64位下的LockWord
+
+```plain
+| 63 62 | 61 m| 60 r| 59 ... 28 | 27 ... 12  | 11 ........ 0 |
+   ▲       ▲     ▲                   ▲             ▲
+   │       │     │                   │             │
+   │       │     │                   │             └— 低 12 位 存放thread id owner或者 HashCode、MonitorId 低位部分
+   │       │     │                   └— 用于不同状态下存放 lock count 或 HashCode、MonitorId 高位部分
+   |       |     |        
+   │       │     └— `r`：一个比特，用于 ReadBarrier 状态（读屏障 GC 标志）
+   │       └— `m`：一个比特，用于 MarkBit 状态（标记位，用于 GC） 
+   └— 最高两位（bit 63-62）：表示当前 lock word 的“状态类型”（共 4 种状态）
+当最高两位为00时代表thin lock
+当最高两位为01时代表fat lock
+当最高两位为10时代表hashcode
+当最高两位为11，剩下的bit表示转发地址（右移了kObjectAlignmentShift）
 ```
 
 
