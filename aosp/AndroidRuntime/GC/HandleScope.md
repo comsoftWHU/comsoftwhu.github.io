@@ -2,8 +2,8 @@
 layout: default
 title: ART的C++代码对Java堆对象的访问--HandleScope
 nav_order: 6
-parent: AndroidRuntime
-grand_parent: AOSP
+parent: GC算法和实现
+grand_parent: AndroidRuntime
 author: Anonymous Committer
 ---
 

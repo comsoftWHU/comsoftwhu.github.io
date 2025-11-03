@@ -2,8 +2,8 @@
 layout: default
 title: 什么是LockWord
 nav_order: 6
-parent: AndroidRuntime
-grand_parent: AOSP
+parent: GC算法和实现
+grand_parent: AndroidRuntime
 author: Anonymous Committer
 ---
 # LockWord
@@ -88,16 +88,6 @@ LockWord的官方注释如下
 |  0  1 | 29 m| 28 r|            MonitorId             |
 |  1  0 | 29 m| 28 r|            hashcode              |
 |  1  1 | forwarding address (>>kObjectAlignmentShift) |
-```
-
-类似的我们可以设计一个64位下的LockWord
-
-```plain
-| 63 62 | 61 m| 60 r| 59 ... 28 | 27 ... 12  |.  11 ........ 0  |
-|  0  0 | 61 m| 60 r|       lock count       | owner thread id  |
-|  0  1 | 61 m| 60 r|           |         MonitorId             |
-|  1  0 | 61 m| 60 r|           |         hashcode              |
-|  1  1 |      forwarding address (>>kObjectAlignmentShift)     |
 ```
 
 代码中体现为
