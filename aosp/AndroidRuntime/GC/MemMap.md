@@ -1,662 +1,262 @@
 ---
 layout: default
-title: Memmap数据结构
+title: MemMap数据结构
 nav_order: 6
 parent: GC算法和实现
 author: Anonymous Committer
 ---
 
-# Memmap数据结构
+## TL;DR
 
-用来管理通过系统调用`mmap`获得的内存段。
+> 统一封装 mmap 与 munmap 等平台接口，管理 ART 进程中的映射区域与元数据；在 64 位但不支持 MAP_32BIT 的平台上，提供低 4GB 线性扫描分配器，满足 JIT 与指针压缩等对 32bit 可寻址区域的要求。
 
-## mmap 系统调用
+## `mmap` 基础速览
 
-<https://linux.die.net/man/2/mmap>
+* 文件映射：将文件页映射到进程虚拟地址空间。
+* 匿名映射：不关联文件（如大块 malloc 背后常用）。
+* 访问：首次触发缺页，内核按需填充页表。
+* 写回：MAP_SHARED 可写回文件；MAP_PRIVATE 写时复制 COW。
+* 解除与同步：munmap 解除映射；msync 同步页缓存到后端。
+* 安全页判定（Linux）：对未映射页调用 msync 会立刻返回 ENOMEM，可用来判定一段地址确实空白。低 4GB 分配器在 Linux 上用此技巧确认可用区间。
 
-`mmap`（memory map）类Unix系统中的一个重要系统调用，用于在进程的地址空间中创建内存映射。它允许程序将文件或设备直接映射到内存中，从而实现高效的文件访问和内存管理。
-
-### 基本概念
-
-`mmap`系统调用在进程的虚拟地址空间中创建一个新的映射，可以是：
-- **文件映射**：将文件的一部分映射到内存
-- **匿名映射**：不关联任何文件的内存区域
-    - 匿名映射用于实现malloc的大内存分配
-
-
-工作原理
-
-1. **建立映射**：
-- 内核在进程的虚拟地址空间中分配区域
-- 对于文件映射，建立虚拟地址到文件块的映射关系
-- 实际物理内存分配延迟到首次访问时（按需分页）
-
-2. **访问机制**：
-- 进程访问映射区域时触发缺页异常
-- 内核处理异常，加载对应文件内容到物理内存
-- 建立页表项，指向实际物理页
-
-3. **写回机制**：
-- `MAP_SHARED`：修改会写入页缓存，最终由内核写回文件
-- `MAP_PRIVATE`：修改触发写时复制，创建私有副本
-
-
-### 函数原型
-
-```c
-#include <sys/mman.h>
-
-void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset);
-```
-
-参数说明
-
-| 参数     | 说明                                                                 |
-|----------|----------------------------------------------------------------------|
-| `addr`   | **建议**的映射起始地址（hint）                       |
-| `length` | 映射区域的长度（字节数）                                             |
-| `prot`   | 内存保护标志（读/写/执行权限）                                       |
-| `flags`  | 映射类型和选项                                                       |
-| `fd`     | 文件描述符（匿名映射时设为-1）                                       |
-| `offset` | 文件映射的起始偏移量（通常为0）                                      |
-
-保护标志（prot）
-
-| 标志          | 说明                     |
-|---------------|--------------------------|
-| `PROT_READ`   | 页面可读                 |
-| `PROT_WRITE`  | 页面可写                 |
-| `PROT_EXEC`   | 页面可执行               |
-| `PROT_NONE`   | 页面不可访问             |
-| ...... | ......|
-
-映射标志（flags）
-
-
-
-| 标志             | 说明      |
-|------------------|----------------------------------------|
-| `MAP_SHARED`     | 共享映射：表示映射区域是共享的。对映射区域的修改会被写回到文件（如果是文件映射），并且其他映射了同一文件的进程可以看到这些修改（但是修改不一定会及时写回文件）。在匿名映射的情况下，`MAP_SHARED`可以用于实现父子进程之间的共享内存                             |
-| `MAP_PRIVATE`    | 私有映射：写时复制（Copy-on-Write），修改不会影响原文件              |
-| `MAP_ANONYMOUS`  | 匿名映射：不关联文件（fd应为-1）                                     |
-| `MAP_FIXED`      | 使用精确指定的地址。addr 必须是页面大小的整数倍。如果由 addr 和 len 指定的内存区域与任何现有映射的页面重叠，则现有映射的重叠部分将被丢弃。如果无法使用指定地址，mmap() 将失败。由于要求固定地址的映射方式可移植性较差，不建议使用此选项。                             |
-| ...... | ......|
-
-
-
-### 相关系统调用
-
-`munmap`解除映射
-
-```c
-int munmap(void *addr, size_t length);
-```
-- 移除指定地址范围的映射
-- `addr`必须是`mmap`返回的地址
-- `length`应与原映射长度一致
-
-`msync`同步内存与文件
-
-```c
-int msync(void *addr, size_t length, int flags);
-```
-- 正常用来把用户空间的内存页与底层文件或设备同步。
-  - 但如果 addr 指向的是 未映射 的地址范围，msync 会立刻返回 -1 并把 errno 设为 ENOMEM。
-- `flags`选项：
-  - `MS_SYNC`：同步写入，等待完成
-  - `MS_ASYNC`：异步写入，仅安排写操作
-  - `MS_INVALIDATE`：使其他映射失效
-- “安全页”（safe page）
-	- 就是指那些调用 msync 得到 ENOMEM 错误的页，这表明在当前进程的虚拟地址空间里，这个页根本不存在任何映射——也就是说它真的是一片“空白区”，可以放心拿来做 mmap。
-
-### 示例
- 文件映射示例
-```c
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <unistd.h>
-
-int main() {
-    int fd = open("example.txt", O_RDWR);
-    struct stat sb;
-    fstat(fd, &sb);
-    
-    // 创建文件映射
-    char *mem = mmap(NULL, sb.st_size, 
-                    PROT_READ | PROT_WRITE,
-                    MAP_SHARED, fd, 0);
-    
-    // 通过指针访问文件内容
-    printf("First character: %c\n", mem[0]);
-    
-    // 修改文件内容
-    mem[0] = 'A';
-    
-    // 同步到磁盘
-    msync(mem, sb.st_size, MS_SYNC);
-    
-    // 解除映射
-    munmap(mem, sb.st_size);
-    close(fd);
-    return 0;
-}
-```
-匿名映射示例（进程间共享）
-
-```c
-#include <sys/mman.h>
-#include <sys/wait.h>
-#include <stdio.h>
-#include <unistd.h>
-
-int main() {
-    // 创建共享匿名映射
-    int *shared = mmap(NULL, sizeof(int),
-                      PROT_READ | PROT_WRITE,
-                      MAP_SHARED | MAP_ANONYMOUS,
-                      -1, 0);
-    
-    *shared = 0;
-    
-    pid_t pid = fork();
-    if (pid == 0) {
-        // 子进程
-        (*shared)++;
-        _exit(0);
-    } else {
-        // 父进程
-        wait(NULL);
-        printf("Shared value: %d\n", *shared); // 输出1
-        munmap(shared, sizeof(int));
-    }
-    return 0;
-}
-```
-
-
-### AOSP里的封装
+## AOSP 的 MemMap 封装层
 
 ```cpp
+// 统一出口（Unix Linux Fuchsia Windows 各有实现）
+static void* TargetMMap(void* start, size_t len, int prot, int flags, int fd, off_t off);
+static int   TargetMUnmap(void* start, size_t len);
+````
 
-void* MemMap::TargetMMap(void* start, size_t len, int prot, int flags, int fd, off_t fd_off) {
-  return mmap(start, len, prot, flags, fd, fd_off);
-}
+* Unix / Linux：直接转调 mmap 与 munmap。
+* Windows：翻译为 CreateFileMapping 与 MapViewOfFile，限制较多（不支持 MAP_FIXED，PROT_EXEC 组合受限）。
+* Fuchsia：使用 VMAR/VMO 机制封装底层映射，通常会在低地址段预留“低内存区域”，在其上做匿名映射；文件映射仍经由统一的 TargetMMap 接口。
 
-int MemMap::TargetMUnmap(void* start, size_t len) {
-  return munmap(start, len);
-}
+**适配图：**
+
+```mermaid
+flowchart LR
+  A[MemMap API] --> B[Unix Linux 适配 mmap 与 munmap]
+  A --> C[Windows 适配 CreateFileMapping 与 MapViewOfFile]
+  A --> D[Fuchsia 适配 低地址 VMAR/VMO 与 mmap]
 ```
 
-## AOSP中的MemMap
+---
 
-在不支持 MAP_32BIT 的64位系统上，  MemMap的实现将进行**线性扫描**以查找空闲页面。出于安全考虑，**扫描的起始位置使用动态初始化器随机化**。不能有其他静态初始化器访问MemMap，否则，调用时可能会看到未初始化的值。
+## 平台差异与宏
 
-### 宏USE_ART_LOW_4G_ALLOCATOR
+* USE_ART_LOW_4G_ALLOCATOR
 
-```cpp
+  * 在 LP64 且非 Fuchsia 的 aarch64 / riscv / Apple 平台启用低 4GB 线性扫描分配器。
+  * x86_64 上可以直接依赖内核 MAP_32BIT 支持低地址映射。
 
-/*
- * 内存分配器架构选择逻辑：
- * 
- * 在64位系统（非Fuchsia）且满足以下条件时启用低4G内存分配器：
- * 1. ARM64架构（__aarch64__）或
- * 2. RISC-V架构（__riscv）或 
- * 3. Apple平台（__APPLE__）
- * 
- */
+* kMadviseZeroes 与 HAVE_MREMAP_SYSCALL（Linux）
 
-#if defined(__LP64__) && !defined(__Fuchsia__) && \
-    (defined(__aarch64__) || defined(__riscv) || defined(__APPLE__))
-#define USE_ART_LOW_4G_ALLOCATOR 1
-#else
-#if defined(__LP64__) && !defined(__Fuchsia__) && !defined(__x86_64__)
-// 如果遇到未识别的64位架构（非x86_64），编译时报错
-#error "Unrecognized 64-bit architecture."
-#endif
-#define USE_ART_LOW_4G_ALLOCATOR 0
-#endif
+  * kMadviseZeroes 为真时，madvise 的 DONTNEED（等）可以在逻辑内容不变的前提下，让内核丢弃驻留页、下次访问再按需拉回。
+  * HAVE_MREMAP_SYSCALL 为真时，mremap 支持做原子替换映射（用于 ReplaceWith）。
 
-// Linux系统特有优化：
-// 1. 支持madvise(MADV_DONTNEED)清零内存页
-// 2. 提供mremap系统调用支持内存区域替换
-#ifdef __linux__
-static constexpr bool kMadviseZeroes = true;
-#define HAVE_MREMAP_SYSCALL true
-#else
-static constexpr bool kMadviseZeroes = false;
-// We cannot ever perform MemMap::ReplaceWith on non-linux hosts since the syscall is not present.
-#define HAVE_MREMAP_SYSCALL false
-#endif
-```
+---
 
-### 成员变量
+## 成员布局与生命周期
 
 ```cpp
-class MemMap {
-......
   std::string name_;
-  uint8_t* begin_ = nullptr;    // Start of data. May be changed by AlignBy.
-  size_t size_ = 0u;            // Length of data.
+  uint8_t* begin_ = nullptr;   // 用户可用起点 可能不是页对齐
+  size_t size_ = 0;            // 用户可用长度
 
-  void* base_begin_ = nullptr;  // Page-aligned base address. May be changed by AlignBy.
-  size_t base_size_ = 0u;       // Length of mapping. May be changed by RemapAtEnd (ie Zygote).
-  int prot_ = 0;                // Protection of the map.
-
-  // When reuse_ is true, this is a view of a mapping on which
-  // we do not take ownership and are not responsible for
-  // unmapping.
-  bool reuse_ = false;
-
-  // When already_unmapped_ is true the destructor will not call munmap.
-  bool already_unmapped_ = false;
-
-  size_t redzone_size_ = 0u;
-
-#if USE_ART_LOW_4G_ALLOCATOR
-  static uintptr_t next_mem_pos_;   // Next memory location to check for low_4g extent.
-
-  static void* TryMemMapLow4GB(void* ptr,
-                               size_t page_aligned_byte_count,
-                               int prot,
-                               int flags,
-                               int fd,
-                               off_t offset);
-#endif
-
-  static void TargetMMapInit();
-  static void* TargetMMap(void* start, size_t len, int prot, int flags, int fd, off_t fd_off);
-  static int TargetMUnmap(void* start, size_t len);
-
-  static std::mutex* mem_maps_lock_;
-
-#ifdef ART_PAGE_SIZE_AGNOSTIC
-  static size_t page_size_;
-#endif
-
-  friend class MemMapTest;  // To allow access to base_begin_ and base_size_.
-};
-......
-}
+  void*  base_begin_ = nullptr;// 页对齐起点
+  size_t base_size_  = 0;      // 页对齐长度
+  int    prot_ = 0;
+  bool   reuse_ = false;       // 仅视图 不负责 unmap
+  bool   already_unmapped_ = false;
+  size_t redzone_size_ = 0;    // Sanitizer redzone
+  ...
 ```
 
+* IsValid 近似等价于 base_size_ 不为零。
+* 析构与 Reset 负责 munmap（除非 reuse 视图或 already_unmapped）。
+* 对齐与切分：有 AlignBy、RemapAtEnd、TakeReservedMemory 等工具方法。
 
-### 成员函数
+---
 
-#### MapAnonymousPreferredAddress
-```cpp
-non_moving_space_mem_map = MapAnonymousPreferredAddress(
-          space_name, request_begin, non_moving_space_capacity, &error_str);
+## 匿名映射 MapAnonymous
+
+> 这是 ART 中最常走的入口，兼顾提示地址、低 4GB 与预留或复用的多分支。
+
+**关键点：**
+
+* 复用 / 预留
+
+  * 复用已有 MemMap 区间时，将标志加入 MAP_FIXED，让新映射强制覆盖在原地址上。
+  * 使用预留（reservation）时，同样加入 MAP_FIXED，并在成功后把预留对象释放、移交所有权。
+
+* 匿名映射
+
+  * 默认使用 MAP_PRIVATE | MAP_ANONYMOUS。
+  * 若调用方设置了 MAP_FIXED，则完全按调用方要求执行，失败直接返回。
+
+* 低 4GB
+
+  * 若启用线性扫描分配器且未指定地址（`USE_ART_LOW_4G_ALLOCATOR && low_4gb && addr == nullptr`），先以去掉执行位的 prot 通过 MapInternalArtLow4GBAllocator 探测映射，成功后再 mprotect 加回执行位。
+  * 否则在 x86_64 上，若需要 low_4gb 且未指定地址，则给 flags 加上 MAP_32BIT，交给内核选择低 2GB/4GB 范围的地址。
+
+**流程图：**
+
+```mermaid
+flowchart TD
+  A[MapAnonymous 入口] --> B[校验 size 大于零 并向页对齐]
+  B --> C[是否复用或使用预留]
+  C -- 复用 --> C1[检查在既有映射内 标志加入 MAP_FIXED]
+  C -- 预留 --> C2[检查预留覆盖 标志加入 MAP_FIXED]
+  C -- 否 --> C3[标志使用 MAP_PRIVATE 和 MAP_ANONYMOUS]
+
+  C3 --> D[进入 MapInternal<br/>根据 low_4gb / 平台选择 mmap 路径]
+  C1 --> D
+  C2 --> D
+
+  D --> F[获得实际地址 actual]
+  F --> G[actual 是否失败]
+  G -- 是 --> G1[记录错误并返回 Invalid]
+  G -- 否 --> H[提示地址 addr 非空 且 非 MAP_FIXED]
+  H -- 是 --> H1[检查 actual!=addr 则 munmap 并报错]
+  H -- 否 --> I[设备端设置匿名 VMA 名称]
+  H1 -->|失败| G1
+  I --> J[是否来自预留]
+  J -- 是 --> J1[释放预留并移交所有权]
+  J -- 否 --> K[返回 MemMap]
 ```
 
-```cpp
- main_mem_map_1 = MapAnonymousPreferredAddress(
-          kMemMapSpaceName[0], request_begin, capacity_, &error_str);
+### MapInternal 内部逻辑（精简视图）
+
+```mermaid
+flowchart TD
+    S1a[LP64 且 low4gb 且 指定地址超出低4GB范围]
+    S1a -- 是 --> S1err[直接返回失败]
+    S1a -- 否 --> S1b[USE_ART_LOW_4G_ALLOCATOR 且 未指定地址 且 low4gb]
+    S1b -- 是 --> S1c[临时去除执行位 使用低4GB线性扫描]
+    S1c -->|失败| S1fail[失败返回]
+    S1c -->|成功| S1d[是否需要执行位]
+    S1d -- 是 --> S1e[mprotect 恢复执行位]
+    S1d -- 否 --> S1ok[返回地址]
+    S1b -- 否 --> S1f[x86_64 支持 MAP_32BIT 且 low4gb 且 addr 为 nullptr]
+    S1f -- 是 --> S1g[flags 加 MAP_32BIT 后调用 mmap]
+    S1f -- 否 --> S1h[直接调用 mmap 使用 flags]
 ```
 
-在heap初始化流程中，使用MapAnonymousPreferredAddress尝试紧接着request_begin之后分配页面（request_begin如果LoadImage成功则会设置为image space的末尾）
+---
 
-方法实现：
+## 低 4GB 线性扫描分配器
 
-```cpp
-MemMap Heap::MapAnonymousPreferredAddress(const char* name,
-                                          uint8_t* request_begin,
-                                          size_t capacity,
-                                          std::string* out_error_str) {
-  while (true) {
-    MemMap map = MemMap::MapAnonymous(name,
-                                      request_begin,
-                                      capacity,
-                                      PROT_READ | PROT_WRITE,
-                                      /*low_4gb=*/ true,
-                                      /*reuse=*/ false,
-                                      /*reservation=*/ nullptr,
-                                      out_error_str);
-    if (map.IsValid() || request_begin == nullptr) {
-      return map;
-    }
-    // Retry a  second time with no specified request begin.
-    request_begin = nullptr;
-  }
-}
-```
-该方法其实就是第一次尝试一下在request_begin的位置MapAnonymous，如果失败了则清空request_begin，然后再调用一次MapAnonymous。
-所以并不能保证一定能在request_begin拿到mmap。
+### 从 low_4gb 请求到分配器入口
 
-#### MapAnonymous
+> 当调用方传入 `low_4gb = true` 时，整体从 API 到低 4GB 扫描分配器的大致路径如下（仅 LP64 场景）：
 
-```cpp
-main_mem_map_1 = MemMap::MapAnonymous(
-          kMemMapSpaceName[0],
-          request_begin,
-          capacity_,
-          PROT_READ | PROT_WRITE,
-          /* low_4gb= */ true,
-          /* reuse= */ false,
-          heap_reservation.IsValid() ? &heap_reservation : nullptr,
-          &error_str);
+```mermaid
+flowchart TD
+    Call[调用 MemMap::MapAnonymous / MapFileAtAddress<br/>参数 low_4gb = true] --> MInternal[进入 MemMap::MapInternal]
+
+    MInternal --> C1{是否 LP64}
+    C1 -- 否 --> Path32[32 位进程 本身地址空间<br/>已经在 4GB 内 直接 mmap 返回]
+    C1 -- 是 --> CCheck[如果 addr 非空<br/>检查 addr 和 addr+length 是否都在低 4GB]
+    CCheck --> CCheckFail{检查失败?}
+    CCheckFail -- 是 --> FailRange[打印错误<br/>返回 MAP_FAILED]
+    CCheckFail -- 否 --> C2{USE_ART_LOW_4G_ALLOCATOR 为 1?}
+
+    C2 -- 否 --> X86Path[x86_64 等平台<br/>flags 加 MAP_32BIT（如有）<br/>然后直接 mmap]
+    C2 -- 是 --> C3[线性扫描逻辑]
 ```
 
-也会直接使用MapAnonymous方法。
+### ART_LOW_4G_ALLOCATOR 线性扫描逻辑
 
-方法实现：
+```mermaid
+flowchart TD
+    C2[开始]  -->  C3{addr 是否为 nullptr}
 
-```cpp
-MemMap MemMap::MapAnonymous(const char* name,
-                            uint8_t* addr,
-                            size_t byte_count,
-                            int prot,
-                            bool low_4gb,
-                            bool reuse,
-                            /*inout*/MemMap* reservation,
-                            /*out*/std::string* error_msg,
-                            bool use_debug_name) {
-#ifndef __LP64__
-  UNUSED(low_4gb);
-#endif
-  //不允许申请 0 大小的映射，直接记录错误信息并返回一个无效的 MemMap。
-  if (byte_count == 0) {
-    *error_msg = "Empty MemMap requested.";
-    return Invalid();
-  }
-  // 对齐到页大小
-  size_t page_aligned_byte_count = RoundUp(byte_count, GetPageSize());
+    C3 -- 否 --> DirectMmap["直接 mmap(addr, ...)<br/>caller 自己保证低 4GB"] --> ReturnDirect[返回结果或失败]
+    C3 -- 是 --> Low4GBAlloc[进入 ART 低 4GB 分配器<br/>使用 next_mem_pos_ 线性扫描]
 
-  // MAP_ANONYMOUS 表示不关联任何文件，MAP_PRIVATE 表示写时拷贝
-  int flags = MAP_PRIVATE | MAP_ANONYMOUS;
- 
-  if (reuse) {
-    // 表示调用者自己已经在 addr 地址预留了一段空白区域，这里只是重用那片地址空间
-    // reuse means it is okay that it overlaps an existing page mapping.
-    // Only use this if you actually made the page reservation yourself.
-    CHECK(addr != nullptr);
-    DCHECK(reservation == nullptr);
+    Low4GBAlloc --> Scan1[第一轮 利用 MemMap::maps_<br/>跳过已知映射 找空洞 调用 TryMemMapLow4GB]
+    Scan1 --> R1{mmap 成功且在低 4GB?}
+    R1 -- 是 --> OK1[更新 next_mem_pos_ = actual + length<br/>返回指针]
+    R1 -- 否 --> SpaceCheck{4GB 内剩余空间是否不足 length?}
 
-    // 确保这片内存确实可用
-    DCHECK(ContainedWithinExistingMap(addr, byte_count, error_msg)) << *error_msg;
-    // 所以会使用 MAP_FIXED 标志
-    flags |= MAP_FIXED;
-  } else if (reservation != nullptr) {
-    // 已经提前在 reservation 中保留好一块连续地址
-    CHECK(addr != nullptr);
-    if (!CheckReservation(addr, byte_count, name, *reservation, error_msg)) {
-      return MemMap::Invalid();
-    }
-    flags |= MAP_FIXED;
-  }
+    FailNoSpace[没有足够连续空间 ENOMEM]
 
-  unique_fd fd;
+    SpaceCheck -- 是 --> FirstRun{当前是否 first_run?}
+    FirstRun -- 否 --> FailNoSpace
+    FirstRun -- 是 --> Restart[ptr 从 LOW_MEM_START 重新扫描<br/>second run] --> Scan1
 
-  // We need to store and potentially set an error number for pretty printing of errors
-  int saved_errno = 0;
-
-  void* actual = nullptr;
-
-#if defined(__linux__)
-  // 在内核 ≥4.17 时，用 MAP_FIXED_NOREPLACE
-	// 它的含义是“要么在 addr 映射成功，要么直接失败，不走随机地址”
-  // Recent kernels have a bug where the address hint might be ignored.
-  // See https://lore.kernel.org/all/20241115215256.578125-1-kaleshsingh@google.com/
-  // We use MAP_FIXED_NOREPLACE to tell the kernel it must allocate at the address or fail.
-  // If the fixed-address allocation fails, we fallback to the default path (random address).
-  // Therefore, non-null 'addr' still behaves as hint-only as far as ART api is concerned.
-  if ((flags & MAP_FIXED) == 0 && addr != nullptr && IsKernelVersionAtLeast(4, 17)) {
-    actual = MapInternal(
-        addr, page_aligned_byte_count, prot, flags | MAP_FIXED_NOREPLACE, fd.get(), 0, low_4gb);
-  }
-#endif  // __linux__
-
-  if (actual == nullptr || actual == MAP_FAILED) {
-    actual = MapInternal(addr, page_aligned_byte_count, prot, flags, fd.get(), 0, low_4gb);
-  }
-  saved_errno = errno;
-
-  if (actual == MAP_FAILED) {
-    if (error_msg != nullptr) {
-      PrintFileToLog("/proc/self/maps", LogSeverity::WARNING);
-      *error_msg = StringPrintf("Failed anonymous mmap(%p, %zd, 0x%x, 0x%x, %d, 0): %s. "
-                                    "See process maps in the log.",
-                                addr,
-                                page_aligned_byte_count,
-                                prot,
-                                flags,
-                                fd.get(),
-                                strerror(saved_errno));
-    }
-    return Invalid();
-  }
-  if (!CheckMapRequest(addr, actual, page_aligned_byte_count, error_msg)) {
-    return Invalid();
-  }
-
-  if (use_debug_name) {
-    SetDebugName(actual, name, page_aligned_byte_count);
-  }
-
-  if (reservation != nullptr) {
-    // Re-mapping was successful, transfer the ownership of the memory to the new MemMap.
-    DCHECK_EQ(actual, reservation->Begin());
-    reservation->ReleaseReservedMemory(byte_count);
-  }
-  // 将所有参数，名字、起始地址、长度、权限、是否复用等打包成一个 MemMap。
-  return MemMap(name,
-                reinterpret_cast<uint8_t*>(actual),
-                byte_count,
-                actual,
-                page_aligned_byte_count,
-                prot,
-                reuse);
-}
+    SpaceCheck -- 否 --> Scan2[第二轮（Linux）: 用 msync 探测真实空洞<br/>找到全 ENOMEM 区域再试 TryMemMapLow4GB]
+    Scan2 --> Done2[成功映射则返回 否则继续扫描直到 4GB 边界]
 ```
 
-#### MapInternal
+> 仅在启用低 4GB 扫描、addr 为空且 low4gb 为真时走。
+> 目标是在 4GB 以下找到连续空闲页：使用随机化起点、用 gMaps 跳过已占区间，并在 Linux 上通过对每页 msync 期待 ENOMEM 的方式确认这一段没有其他匿名/文件映射。
 
-```cpp
-void* MemMap::MapInternal(void* addr,
-                          size_t length,
-                          int prot,
-                          int flags,
-                          int fd,
-                          off_t offset,
-                          bool low_4gb) {
-#ifdef __LP64__
-  // When requesting low_4g memory and having an expectation, the requested range should fit into
-  // 4GB.
-  // 当low_4gb==true时，保证所给的 addr（以及 addr+length）都不会越过 32 位地址空间。
-  if (low_4gb && (
-      // Start out of bounds.
-      (reinterpret_cast<uintptr_t>(addr) >> 32) != 0 ||
-      // End out of bounds. For simplicity, this will fail for the last page of memory.
-      ((reinterpret_cast<uintptr_t>(addr) + length) >> 32) != 0)) {
-    LOG(ERROR) << "The requested address space (" << addr << ", "
-               << reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(addr) + length)
-               << ") cannot fit in low_4gb";
-    return MAP_FAILED;
-  }
-#else
-  UNUSED(low_4gb);
-#endif
-  DCHECK_ALIGNED_PARAM(length, GetPageSize());
-  // TODO:
-  // A page allocator would be a useful abstraction here, as
-  // 1) It is doubtful that MAP_32BIT on x86_64 is doing the right job for us
-  void* actual = MAP_FAILED;
-#if USE_ART_LOW_4G_ALLOCATOR
-  // MAP_32BIT only available on x86_64.
-  if (low_4gb && addr == nullptr) {
-    // The linear-scan allocator has an issue when executable pages are denied (e.g., by selinux
-    // policies in sensitive processes). In that case, the error code will still be ENOMEM. So
-    // the allocator will scan all low 4GB twice, and still fail. This is *very* slow.
-    //
-    // To avoid the issue, always map non-executable first, and mprotect if necessary.
-    const int orig_prot = prot;
-    const int prot_non_exec = prot & ~PROT_EXEC;
-    // Android 中某些进程（受 SELinux 策略限制）不能直接在低 4 GiB 范围分配可执行页面。这时，会先用 “不带可执行位” 的分配器找到地址。
-    actual = MapInternalArtLow4GBAllocator(length, prot_non_exec, flags, fd, offset);
+---
 
-    if (actual == MAP_FAILED) {
-      return MAP_FAILED;
-    }
+## 文件映射与对齐
 
-    // 再用 mprotect 打开 PROT_EXEC
-    // See if we need to remap with the executable bit now.
-    if (orig_prot != prot_non_exec) {
-      if (mprotect(actual, length, orig_prot) != 0) {
-        PLOG(ERROR) << "Could not protect to requested prot: " << orig_prot;
-        TargetMUnmap(actual, length);
-        errno = ENOMEM;
-        return MAP_FAILED;
-      }
-    }
-    return actual;
-  }
+对齐规则
 
-  actual = TargetMMap(addr, length, prot, flags, fd, offset);
-#else
-#if defined(__LP64__)
-  // 支持MAP_32BIT的平台，直接使用系统 mmap + MAP_32BIT
-  if (low_4gb && addr == nullptr) {
-    flags |= MAP_32BIT;
-  }
-#endif
-  actual = TargetMMap(addr, length, prot, flags, fd, offset);
-#endif
-  return actual;
-}
+* 起始偏移向下页对齐；
+* 实际映射长度加上页内偏移后再向上页对齐；
+* 最终 begin 等于 base_begin 加上页内偏移，size 为用户可见长度。
+
+```mermaid
+flowchart LR
+  A[文件偏移 start] --> B[计算 base_off 向下到页边界]
+  B --> C[以 base_off 调用 mmap 获得 base_begin]
+  C --> D[begin 等于 base_begin 加上 start 减去 base_off]
+  C --> E[size 等于用户长度]
+  D --> F[得到用户可见区间]
 ```
 
-#### MapInternalArtLow4GBAllocator
+提示地址检查
 
-`MapInternalArtLow4GBAllocator`是ART自己实现的一个线性分配器用来管理低32位的地址空间。
+* 若传入 addr 但未使用 MAP_FIXED，成功后需检查实际 begin 是否等于 addr，否则立刻 munmap 并报错。
 
-```cpp
+---
 
-void* MemMap::MapInternalArtLow4GBAllocator(size_t length,
-                                            int prot,
-                                            int flags,
-                                            int fd,
-                                            off_t offset) {
-#if USE_ART_LOW_4G_ALLOCATOR
-  void* actual = MAP_FAILED;
+## 保护、同步与回收
 
-  bool first_run = true;
+* Protect：调用 mprotect，更新 prot_。
+* Sync：调用 msync（如 Linux 上使用 MS_SYNC），用于持久化或失效缓存。
+* ZeroMemory / MadviseZero（Linux 上的典型行为）：
 
-  std::lock_guard<std::mutex> mu(*mem_maps_lock_);
-  // 从 next_mem_pos_ 开始，线性扫描整个低 4GB 空间
-  for (uintptr_t ptr = next_mem_pos_; ptr < 4 * GB; ptr += GetPageSize()) {
-    // Use gMaps as an optimization to skip over large maps.
-    // Find the first map which is address > ptr.
-    // 利用 gMaps 跳过已映射区间
-    auto it = gMaps->upper_bound(reinterpret_cast<void*>(ptr));
-    if (it != gMaps->begin()) {
-      auto before_it = it;
-      --before_it;
-      // Start at the end of the map before the upper bound.
-      ptr = std::max(ptr, reinterpret_cast<uintptr_t>(before_it->second->BaseEnd()));
-      CHECK_ALIGNED_PARAM(ptr, GetPageSize());
-    }
-    while (it != gMaps->end()) {
-      // 检查空间是足够
-      // How much space do we have until the next map?
-      size_t delta = reinterpret_cast<uintptr_t>(it->first) - ptr;
-      // If the space may be sufficient, break out of the loop.
-      if (delta >= length) {
-        break;
-      }
-      // Otherwise, skip to the end of the map.
-      ptr = reinterpret_cast<uintptr_t>(it->second->BaseEnd());
-      CHECK_ALIGNED_PARAM(ptr, GetPageSize());
-      ++it;
-    }
-    // 试一试这个地址能否直接 mmap 成功
-    // Try to see if we get lucky with this address since none of the ART maps overlap.
-    actual = TryMemMapLow4GB(reinterpret_cast<void*>(ptr), length, prot, flags, fd, offset);
-    if (actual != MAP_FAILED) {
-      // 成功后更新 next_mem_pos_，并立即返回
-      next_mem_pos_ = reinterpret_cast<uintptr_t>(actual) + length;
-      return actual;
-    }
+  * 对齐到页边界后，对目标区间调用 madvise(..., MADV_DONTNEED)。
+  * 内核可以丢弃驻留物理页，逻辑内容仍被视为零页，会在后续访问时按需重新拉入。
 
-    // 如果距离 4GB 剩余空间不足，尝试从底部重来一次
-    if (4U * GB - ptr < length) {
-      // Not enough memory until 4GB.
-      if (first_run) {
-        // Try another time from the bottom;
-        ptr = LOW_MEM_START - GetPageSize();
-        first_run = false;
-        continue;
-      } else {
-        // Second try failed.
-        break;
-      }
-    }
-
-    uintptr_t tail_ptr;
-
-    // Check pages are free. 通过 msync 判断该页是否真的未被映射
-    // 纯靠 mmap 试探可能因为内核策略或预留区域而失败，不一定能区分“真正被其它映射占用” vs “位置不合适”两种情况。
-    bool safe = true;
-    for (tail_ptr = ptr; tail_ptr < ptr + length; tail_ptr += GetPageSize()) {
-      if (msync(reinterpret_cast<void*>(tail_ptr), GetPageSize(), 0) == 0) {
-        safe = false;
-        break;
-      } else {
-        DCHECK_EQ(errno, ENOMEM);
-      }
-    }
-
-    next_mem_pos_ = tail_ptr;  // update early, as we break out when we found and mapped a region
-
-    // safe == true 代表从底部开始存在一个大小为length的空余区间，再试一试TryMemMapLow4GB
-    if (safe == true) {
-      actual = TryMemMapLow4GB(reinterpret_cast<void*>(ptr), length, prot, flags, fd, offset);
-      if (actual != MAP_FAILED) {
-        return actual;
-      }
-    } else {
-      // Skip over last page.
-      ptr = tail_ptr;
-    }
-  }
-
-  if (actual == MAP_FAILED) {
-    LOG(ERROR) << "Could not find contiguous low-memory space.";
-    errno = ENOMEM;
-  }
-  return actual;
-#else
-  // 不使用USE_ART_LOW_4G_ALLOCATOR的情况下不可能运行到这个方法
-  UNUSED(length, prot, flags, fd, offset);
-  LOG(FATAL) << "Unreachable";
-  UNREACHABLE();
-#endif
-}
+```mermaid
+flowchart TD
+  Z0[MemMap 区间] --> Z1[按页对齐待回收区间]
+  Z1 --> Z2["madvise(..., MADV_DONTNEED)"]
+  Z2 --> Z3[逻辑视角不变 下次访问触发缺页<br/>物理可被回收与清零]
 ```
 
+> 某些 GC 空间实现可能在此基础上使用 mincore 聚合驻留页，以便只对“实际驻留的页面”调用 madvise；这一层属于上层策略，MemMap 自身只提供基础接口。
 
-#### TryMemMapLow4GB
-```cpp
+---
 
-#if USE_ART_LOW_4G_ALLOCATOR
-void* MemMap::TryMemMapLow4GB(void* ptr,
-                                    size_t page_aligned_byte_count,
-                                    int prot,
-                                    int flags,
-                                    int fd,
-                                    off_t offset) {
-  void* actual = TargetMMap(ptr, page_aligned_byte_count, prot, flags, fd, offset);
-  if (actual != MAP_FAILED) {
-    // Since we didn't use MAP_FIXED the kernel may have mapped it somewhere not in the low
-    // 4GB. If this is the case, unmap and retry.
-    // 如果分配到的地址空间超过了4 * GB，munmap然后返回MAP_FAILED
-    if (reinterpret_cast<uintptr_t>(actual) + page_aligned_byte_count >= 4 * GB) {
-      TargetMUnmap(actual, page_aligned_byte_count);
-      actual = MAP_FAILED;
-    }
-  }
-  return actual;
-}
-#endif
+## 原子替换映射 ReplaceWith
 
+仅 Linux 支持，依赖 mremap。
+前置条件：
+
+* 源与目标不重叠，且都拥有真实映射（非 reuse 视图）。
+* redzone、页对齐、页内偏移等参数一致。
+* 目标区间足以容纳源区间。
+
+```mermaid
+sequenceDiagram
+  participant Src as Source MemMap
+  participant Dst as Dest MemMap
+  participant OS as Kernel mremap
+
+  Src->>OS: mremap(Source, Dst.base_begin, MREMAP_FIXED)
+  OS-->>Src: 返回结果
+  alt 成功
+    Src->>Dst: 转移所有权 Source 失效
+  else 失败
+    Src->>Src: 保持不变 返回错误
+  end
 ```
