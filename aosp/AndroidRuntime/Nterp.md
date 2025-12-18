@@ -402,7 +402,25 @@ extern "C" size_t NterpGetStaticField(Thread* self,
 3. **无特殊插桩或分析**: 不能有`Profiler`等工具安装方法进入/退出桩，或者有其它需要慢速解释器才能支持的监听器。
 4. **非AOT编译环境**: 当前进程不能是`dex2oat`，因为它有自己特殊的工作模式。
 5. **无异步异常**: 线程中不能有待处理的异步异常，因为 `Nterp` 的汇编循环中没有检查这类异常的逻辑，必须切换回传统解释器才能响应。
-6. **JIT编译策略兼容**: JIT编译器必须被禁用，或者没有开启“首次使用即编译”的激进模式。
+6. **JIT编译策略兼容**: JIT编译器要么被禁用，要么没有开启“首次使用即编译”的激进模式。
+
+```cpp
+bool CanRuntimeUseNterp() REQUIRES_SHARED(Locks::mutator_lock_) {
+  Runtime* runtime = Runtime::Current();
+  instrumentation::Instrumentation* instr = runtime->GetInstrumentation();
+  // If the runtime is interpreter only, we currently don't use nterp as some
+  // parts of the runtime (like instrumentation) make assumption on an
+  // interpreter-only runtime to always be in a switch-like interpreter.
+  return IsNterpSupported() && !runtime->IsJavaDebuggable() && !instr->EntryExitStubsInstalled() &&
+         !instr->InterpretOnly() && !runtime->IsAotCompiler() &&
+         !instr->NeedsSlowInterpreterForListeners() &&
+         // An async exception has been thrown. We need to go to the switch interpreter. nterp
+         // doesn't know how to deal with these so we could end up never dealing with it if we are
+         // in an infinite loop.
+         !runtime->AreAsyncExceptionsThrown() &&
+         (runtime->GetJit() == nullptr || !runtime->GetJit()->JitAtFirstUse());
+}
+```
 
 ## 总结
 
