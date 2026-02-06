@@ -18,7 +18,7 @@ flowchart LR
   LNK["Link 类加载与解析"]
   EXE["Exec执行"]
   PGO["PGO优化"]
-  AOT["AOT编译"]
+  AOT["编译"]
   MEM["Memory,GC"]
   NAT["Native Code, JNI"]
 
