@@ -6,7 +6,10 @@ parent: 编译
 author:  Anonymous Committer
 ---
 
-# Fleet：面向智能手机的软硬协同内存管理框架总结
+# More Apps, Faster Hot-Launch on Mobile Devices via Fore/Background-aware GC-Swap Co-design
+
+
+<https://dl.acm.org/doi/abs/10.1145/3620666.3651377>
 
 ## 1. 研究背景与痛点
 * **目标：** 提升智能手机的“热启动”速度（极大地影响用户体验），同时在后台缓存更多的 App。
