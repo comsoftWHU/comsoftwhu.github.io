@@ -2,7 +2,7 @@
 layout: default
 title: Fleet GC
 nav_order: 3
-parent: 编译
+parent: 论文
 author:  Anonymous Committer
 ---
 
